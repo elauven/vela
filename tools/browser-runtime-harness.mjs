@@ -57,6 +57,8 @@ try {
     focused: (selector) => page.locator(selector).first().evaluate(element => document.activeElement === element),
     style: (selector, property) => page.locator(selector).first().evaluate(
       (element, name) => getComputedStyle(element).getPropertyValue(name), property),
+    finishAnimations: () => page.evaluate(() => { for (const animation of document.getAnimations()) animation.finish(); }),
+    reducedMotion: (on) => page.emulateMedia({ reducedMotion: on ? 'reduce' : 'no-preference' }),
     focus: (selector) => page.locator(selector).first().focus(),
     click: (selector) => page.locator(selector).first().click(),
     dblclick: (selector) => page.locator(selector).first().dblclick(),

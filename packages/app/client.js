@@ -31,6 +31,7 @@ const navigatingStore = writable(null);
 export const navigating = { subscribe: navigatingStore.subscribe };
 
 const beforeHooks = new Set();
+const navigateHooks = new Set();
 const afterHooks = new Set();
 
 // beforeNavigate(fn) calls fn({ from, to, type, cancel }) before every
@@ -40,6 +41,16 @@ const afterHooks = new Set();
 export function beforeNavigate(fn) {
   beforeHooks.add(fn);
   return () => beforeHooks.delete(fn);
+}
+
+// onNavigate(fn) calls fn({ from, to, type }) once a navigation of the
+// router has what it shows, right before the page changes (task 096). The
+// change waits for a promise fn returns, so fn can start a view transition
+// or an exit animation; a function fn returns (or resolves with) runs after
+// the page changed. It returns a function that removes fn.
+export function onNavigate(fn) {
+  navigateHooks.add(fn);
+  return () => navigateHooks.delete(fn);
 }
 
 // afterNavigate(fn) calls fn({ from, to, type }) after every navigation of
@@ -72,7 +83,8 @@ export function invalidate() {
   return router.navigate(new URL(location.href), { type: 'invalidate', replace: true, invalidate: true, keep: true });
 }
 
-// start({ VelaApp, routes, root, onMismatch, preload }) hydrates the app
+// start({ VelaApp, routes, root, onMismatch, preload, viewTransitions })
+// hydrates the app
 // root of a server document (R-8) and installs the router: it loads the
 // lazy components the payload names, adopts the server DOM, and from then
 // on navigates inside the app without loading documents (N-2) and posts
@@ -80,8 +92,10 @@ export function invalidate() {
 // the default prefetch mode of links ('hover', 'viewport' or 'off'). It
 // resolves with { app, routes } and dispatches 'vela:hydrated' on root;
 // every navigation of the router then dispatches 'vela:navigated', and a
-// failed form action 'vela:form'.
-export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, preload = 'hover' } = {}) {
+// failed form action 'vela:form'. viewTransitions: true changes the page of
+// a navigation inside document.startViewTransition where the browser has it
+// and prefers-reduced-motion does not ask for less motion.
+export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, preload = 'hover', viewTransitions = false } = {}) {
   if (typeof VelaApp !== 'function') throw new TypeError('@govela/app/client: start() needs VelaApp');
   const target = typeof root === 'string' ? document.getElementById(root) : root;
   if (!target) throw new Error(`@govela/app/client: no element #${root} in the document`);
@@ -91,7 +105,7 @@ export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, pr
   const options = onMismatch ? { onMismatch } : {};
   const app = hydrate(VelaApp, target, options);
   if (routes && props && Array.isArray(props.chain)) {
-    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain, preload });
+    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain, preload, viewTransitions });
   }
   target.dispatchEvent(new CustomEvent('vela:hydrated', { bubbles: true, detail: { app } }));
   return { app, routes };
@@ -110,7 +124,7 @@ function payloadProps(target) {
   return null;
 }
 
-function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
+function createRouter({ VelaApp, app, routes, target, route, chain, preload, viewTransitions }) {
   const build = document.querySelector('meta[name="vela-build"]')?.getAttribute('content') || '';
   const scroll = readScroll();
   let index = typeof history.state?.[indexKey] === 'number' ? history.state[indexKey] : 0;
@@ -242,6 +256,14 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
       return;
     }
     if (controller !== own) return;
+    // onNavigate hooks may delay the change (task 096).
+    const navigation = { from, to, type: opts.type };
+    const after = [];
+    if (navigateHooks.size) {
+      const results = await Promise.all([...navigateHooks].map((fn) => fn(navigation)));
+      for (const result of results) if (typeof result === 'function') after.push(result);
+      if (controller !== own) return;
+    }
     controller = null;
 
     if (!opts.keep) saveScroll();
@@ -262,9 +284,17 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload }) {
     shown = withoutHash(at.href);
 
     const autofocus = new Set(target.querySelectorAll('[autofocus]'));
-    apply(body, view);
-    applyHead(body.head);
-    await tick();
+    const change = async () => {
+      apply(body, view);
+      applyHead(body.head);
+      await tick();
+    };
+    if (viewTransitions && typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      await document.startViewTransition(change).updateCallbackDone;
+    } else {
+      await change();
+    }
+    for (const fn of after) fn();
 
     if (!opts.keep) {
       if (how === 'popstate') {

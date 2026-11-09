@@ -646,6 +646,7 @@ vela && go build ./...
 | `goModule` | the module of `go.mod` | import root of the mirrored tree and the matchers |
 | `ssrModule` | `"ssrModule"` of `vela.config.json` (required) | import root of the generated renderers |
 | `typescript` | `false` | a TypeScript project (docs/TYPESCRIPT.md TS-8): `VelaApp.vela` is `lang="ts"`, and the route types below are generated |
+| `viewTransitions` | `false` | `client.js` starts the router with `viewTransitions: true`: a navigation changes the page inside `document.startViewTransition` (task 096) |
 
 ### Generated files
 
@@ -656,7 +657,7 @@ A file without that line is never overwritten or removed.
 | --- | --- |
 | `src/_app/VelaApp.vela` | The app root of R-2: layouts imported statically, pages and error pages with `lazy()`, a table from segment id to component, and one `<vela:component>` per level up to the maximum chain depth, each with `data`, `error` and `route` |
 | `src/_app/routes.js` | The client table: the routes with their chains, the patterns in ranking order, the matchers (`@govela/app/match` and the project's own), the lazy components by segment id (`lazy()` returns the value `VelaApp` registered under the same id) and `match(path)` |
-| `src/_app/client.js` | The client entry: `start({ VelaApp, routes, root: 'vela-app' })` from `@govela/app/client` (task 076) |
+| `src/_app/client.js` | The client entry: `start({ VelaApp, routes, root: 'vela-app' })` from `@govela/app/client` (task 076), with `viewTransitions: true` when `vela.app.json` asks for it |
 | `src/_app/page.js` | `getPage()`, the page state of R-11, imported as `#app/page.js`; in a TypeScript project with `page.d.ts`, which types it with `Route` of `@govela/app/client` |
 | `internal/appgen/routes_gen.go` | `appgen.Routes() app.Routes`: the same patterns, the chains with their loaders (`app.LoaderOf`), `Deps` and `Render` of the mirrored packages, the matchers, and the `VelaApp` renderer. It compiles against the `app` package only, without reflection |
 
@@ -840,7 +841,7 @@ gets JSON with status 200 (N-5, N-6):
 it; an app imports the rest:
 
 ```js
-import { goto, invalidate, navigating, beforeNavigate, afterNavigate } from '@govela/app/client';
+import { goto, invalidate, navigating, beforeNavigate, onNavigate, afterNavigate } from '@govela/app/client';
 ```
 
 | Export | Meaning |
@@ -849,6 +850,7 @@ import { goto, invalidate, navigating, beforeNavigate, afterNavigate } from '@go
 | `invalidate()` | loads the current URL again with every loader (empty `X-Vela-Have`), keeping the history entry, the scroll position and the focus |
 | `navigating` | a store: `null`, or `{ from, to, type }` while a navigation loads, for loading indicators (`$navigating`) |
 | `beforeNavigate(fn)` | `fn({ from, to, type, cancel })` before each navigation; `cancel()` keeps the page. Returns a function that removes `fn` |
+| `onNavigate(fn)` | `fn({ from, to, type })` once the navigation has what it shows, right before the page changes. The change waits for a promise `fn` returns; a function it returns (or resolves with) runs after the change. Returns a function that removes `fn` |
 | `afterNavigate(fn)` | `fn({ from, to, type })` once the new page shows. Returns a function that removes `fn` |
 
 `from` and `to` are `{ url, route }`, with `url` a `URL` and `route` the route
@@ -870,6 +872,25 @@ id; `type` is `link`, `goto`, `popstate` or `invalidate`. Register hooks in
     return beforeNavigate(confirmLeave);
   });
 </script>
+```
+
+**View transitions.** With `"viewTransitions": true` in `vela.app.json`
+(or `start({ …, viewTransitions: true })`), the router changes the page of
+a navigation inside `document.startViewTransition`, so the browser
+cross-fades the old and the new page; style it with
+`::view-transition-old(…)`/`::view-transition-new(…)` and
+`view-transition-name`. Browsers without the API and
+`prefers-reduced-motion: reduce` change the page directly. The data is
+loaded before the transition starts, so the old page stays interactive
+while the server answers. `onNavigate` runs right before the change: a
+promise it returns delays it (to finish an exit animation), and the
+function it returns runs once the new page is in place:
+
+```js
+onMount(() => onNavigate(async ({ to }) => {
+  await closeMenu();
+  return () => announce(to.url.pathname);
+}));
 ```
 
 The router:

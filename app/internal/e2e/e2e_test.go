@@ -86,8 +86,29 @@ func buildExample(t *testing.T) (root, server string) {
 	t.Helper()
 	testkit.RequireGo(t)
 	root = testkit.CopyProject(t, filepath.Join(testkit.RepoRoot(t), "examples", "app"))
+	// The browser checks run with view transitions (task 096), and an
+	// onNavigate hook records the title before and after each change.
+	if err := os.WriteFile(filepath.Join(root, gen.ConfigFile), []byte(`{"viewTransitions": true}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, diags := gen.Generate(root); len(diags) > 0 {
 		t.Fatal(gen.Error(diags))
+	}
+	client := filepath.Join(root, "src", "_app", "client.js")
+	entry, err := os.ReadFile(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := `
+import { onNavigate } from '@govela/app/client';
+onNavigate(async () => {
+  const before = document.title;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  return () => { (window.__onNavigate = window.__onNavigate || []).push(before + ' -> ' + document.title); };
+});
+`
+	if err := os.WriteFile(client, append(entry, hook...), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	testkit.CompileApp(t, root)
 	server = filepath.Join(root, "app-server")

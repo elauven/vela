@@ -15,7 +15,7 @@
  */
 
 import { $$contextParent, $$contextRun, $$isDev, $$lazyById, warn } from './runtime.js';
-import { $$owner, $$setHydration, $$createCursor, $$listen, $$action, $$queueAction, $$appHead } from './runtime-blocks.js';
+import { $$owner, $$setHydration, $$createCursor, $$listen, $$action, $$queueAction, $$transition, $$animation, $$appHead } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
 
@@ -178,6 +178,14 @@ function hydrateCursor(pos, owner, session, ctx) {
     // (serverComponent() in a new branch) waits for that build's insert.
     action(node, action, read) {
       return $$action(owner, node, action, read, (start) => session.after.push(() => $$queueAction(start)), cursor.ctx);
+    },
+    // Adopted elements register their transitions for later outros; no
+    // transition plays while a page hydrates (task 096).
+    transition(node, kind, fn, read) {
+      $$transition(owner, node, kind, fn, read);
+    },
+    animation(node, fn, read) {
+      $$animation(owner, node, fn, read);
     },
     // block adopts a block; under repair a mismatch inside it remounts the
     // block from its server range with a create cursor.

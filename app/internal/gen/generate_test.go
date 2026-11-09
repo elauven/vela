@@ -282,3 +282,38 @@ func TestScaffoldGuard(t *testing.T) {
 		t.Fatalf("routes_gen.go: %v\n%s", err, go_)
 	}
 }
+
+// TestGenerateViewTransitions: "viewTransitions" in vela.app.json starts
+// the router with view transitions (task 096).
+func TestGenerateViewTransitions(t *testing.T) {
+	root := testkit.CopyProject(t, goldenProject)
+	read := func() string {
+		data, err := os.ReadFile(filepath.Join(root, "src/_app/client.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if _, diags := Generate(root); len(diags) > 0 {
+		t.Fatal(Error(diags))
+	}
+	if got := read(); !strings.Contains(got, "start({ VelaApp, routes, root: 'vela-app' });") {
+		t.Fatalf("client.js without the option:\n%s", got)
+	}
+	config := filepath.Join(root, ConfigFile)
+	data, err := os.ReadFile(config)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	merged := `{"viewTransitions": true}`
+	if len(data) > 0 {
+		merged = strings.Replace(strings.TrimSpace(string(data)), "{", `{"viewTransitions": true, `, 1)
+	}
+	writeFile(t, config, merged)
+	if _, diags := Generate(root); len(diags) > 0 {
+		t.Fatal(Error(diags))
+	}
+	if got := read(); !strings.Contains(got, "start({ VelaApp, routes, root: 'vela-app', viewTransitions: true });") {
+		t.Fatalf("client.js with viewTransitions:\n%s", got)
+	}
+}

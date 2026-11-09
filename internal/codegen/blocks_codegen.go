@@ -482,6 +482,15 @@ func (g *ASTGen) blocksAction(ref string, attr *sfcast.Attr) jsast.JsStmt {
 	if attr.Expr != nil {
 		read = blocksArrow(nil, g.templateExpr(attr.Expr))
 	}
+	switch {
+	case attr.IsTransition():
+		// transition:, in:, out: (task 096): the fragment's block plays it;
+		// the parameters are read when it starts.
+		kind := map[string]string{"transition": "both", "in": "in", "out": "out"}[attr.Directive]
+		return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "transition"), jsast.GenIdent(ref), jsast.GenStrLit(kind), g.templateExpr(attr.Action), read))
+	case attr.Directive == "animate":
+		return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "animation"), jsast.GenIdent(ref), g.templateExpr(attr.Action), read))
+	}
 	handle := g.blocks.next("$$a")
 	call := jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "action"), jsast.GenIdent(ref), g.templateExpr(attr.Action), read)
 	if attr.Expr != nil {

@@ -39,6 +39,10 @@ type Config struct {
 	// TS-8.1): VelaApp.vela is lang="ts", and the types of every route are
 	// generated from its Go loaders (TS-8.2).
 	TypeScript bool `json:"typescript"`
+	// ViewTransitions makes the client entry start the router with
+	// viewTransitions: true (task 096): navigations change the page inside
+	// document.startViewTransition.
+	ViewTransitions bool `json:"viewTransitions"`
 }
 
 // LoadConfig reads vela.app.json, vela.config.json and go.mod in root and

@@ -24,13 +24,13 @@ void $$runtimeContract1;
 
 // stats counts live owners and listeners for the destroy checks of the
 // test harness (Q-10.2 item 5, task 052).
-const stats = { owners: 0, listeners: 0, actions: 0 };
+const stats = { owners: 0, listeners: 0, actions: 0, leaving: 0 };
 
 // $$debugStats reports live owners, live listeners, live actions with a
 // destroy, and queued updates.
 export function $$debugStats() {
   const batch = globalThis[Symbol.for('vela.batch')];
-  return { owners: stats.owners, listeners: stats.listeners, actions: stats.actions, queued: batch ? batch.queue.length : 0 };
+  return { owners: stats.owners, listeners: stats.listeners, actions: stats.actions, leaving: stats.leaving, queued: batch ? batch.queue.length : 0 };
 }
 
 // $$listen adds an event listener that the owner removes.
@@ -243,6 +243,14 @@ function createCursor(parent, before, owner, ctx) {
     action(node, action, read) {
       return $$action(owner, node, action, read, $$queueAction, cursor.ctx);
     },
+    // transition and animation register transition:/in:/out: and animate:
+    // with the fragment (task 096); its block plays them.
+    transition(node, kind, fn, read) {
+      $$transition(owner, node, kind, fn, read);
+    },
+    animation(node, fn, read) {
+      $$animation(owner, node, fn, read);
+    },
     block(kind, ...args) {
       return kind(cursor, ...args);
     },
@@ -301,6 +309,7 @@ function registerBlock(cursor, block, anchor, release) {
   const finish = (removeDom) => {
     if (done) return;
     done = true;
+    if (block.leaving) for (const record of [...block.leaving]) record.finish();
     release(removeDom);
     if (removeDom) anchor.remove();
   };
@@ -311,12 +320,192 @@ function registerBlock(cursor, block, anchor, release) {
   return block;
 }
 
+// ── Transitions ──────────────────────────────────────────────────────────
+// transition:, in: and out: (task 096) are local: they play when the block
+// that directly holds the element's fragment adds or removes it after the
+// first render, never while a page hydrates. A component's root fragment
+// belongs to the fragment it is mounted in, so <Modal> under {#if} plays
+// the transitions of its root elements with the branch. They register in
+// the group of their owner: the owner of the fragment, or the group of the
+// position a component root was mounted at. The animations run with the
+// Web Animations API, from keyframes sampled from the transition's css(t, u);
+// prefers-reduced-motion and a browser without element.animate skip them.
+
+let componentGroup = null;
+
+function groupOf(owner) {
+  return owner.group || owner;
+}
+
+export function $$transition(owner, node, kind, fn, read) {
+  const group = groupOf(owner);
+  const entry = { node, kind, fn, read, running: null, leaving: false };
+  (group.transitions || (group.transitions = [])).push(entry);
+  // An intro still running when the element goes without an outro stops.
+  owner.add(() => {
+    if (entry.running && !entry.leaving) {
+      entry.running.animation.cancel();
+      entry.running = null;
+    }
+  });
+}
+
+export function $$animation(owner, node, fn, read) {
+  groupOf(owner).animation = { node, fn, read, running: null };
+}
+
+function reducedMotion() {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+const linearEasing = (t) => t;
+
+function cssKeyframe(css) {
+  const frame = {};
+  for (const declaration of css.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon < 0) continue;
+    const name = declaration.slice(0, colon).trim();
+    if (!name) continue;
+    const property = name.startsWith('--') ? name : name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    frame[property === 'float' ? 'cssFloat' : property] = declaration.slice(colon + 1).trim();
+  }
+  return frame;
+}
+
+// animateCss runs config.css from t = from to t = to on node and returns the
+// running record, or null when nothing runs.
+function animateCss(node, config, from, to, fill) {
+  if (!config || typeof config.css !== 'function' || typeof node.animate !== 'function') return null;
+  const easing = config.easing || linearEasing;
+  const duration = Math.max(0, (config.duration === undefined ? 300 : config.duration) * Math.abs(to - from));
+  const delay = config.delay || 0;
+  if (duration === 0 && delay === 0) return null;
+  const count = Math.max(2, Math.ceil(duration / 16) + 1);
+  const frames = [];
+  for (let i = 0; i < count; i++) {
+    const t = from + (to - from) * easing(i / (count - 1));
+    frames.push(cssKeyframe(config.css(t, 1 - t)));
+  }
+  const animation = node.animate(frames, { duration, delay, easing: 'linear', fill });
+  return {
+    animation,
+    // at is the t the element shows now, for an interrupted transition.
+    at() {
+      const elapsed = (Number(animation.currentTime) || 0) - delay;
+      const p = duration > 0 ? Math.min(1, Math.max(0, elapsed / duration)) : 1;
+      return from + (to - from) * easing(p);
+    },
+  };
+}
+
+// play starts the intro (t 0 → 1) or the outro (t 1 → 0) of a transition,
+// from where a running one of the other direction is.
+function play(entry, intro) {
+  let from = intro ? 0 : 1;
+  if (entry.running) {
+    from = entry.running.at();
+    entry.running.animation.cancel();
+    entry.running = null;
+  }
+  if (reducedMotion()) return null;
+  const config = entry.fn(entry.node, entry.read ? entry.read() : undefined, { direction: intro ? 'in' : 'out' });
+  const running = animateCss(entry.node, config, from, intro ? 1 : 0, intro ? 'backwards' : 'forwards');
+  if (!running) return null;
+  entry.running = running;
+  running.animation.finished.then(() => {
+    if (entry.running !== running) return;
+    entry.running = null;
+    // An intro leaves the element's own styles in effect.
+    if (intro) running.animation.cancel();
+  }, () => {});
+  return running.animation;
+}
+
+// introduce plays the intros of a fragment a block mounted after the first
+// render.
+function introduce(mounted) {
+  const transitions = mounted && mounted.owner.transitions;
+  if (!transitions) return;
+  for (const entry of transitions) if (entry.kind !== 'out') play(entry, true);
+}
+
+// leave removes a fragment of a block: at once, or once the outros of its
+// transitions finish. The fragment stops updating and releases its
+// resources now; block.leaving holds the range until then, and a block
+// that goes away takes it along.
+function leave(mounted, block) {
+  if (!mounted) return;
+  const transitions = mounted.owner.transitions;
+  const animations = [];
+  if (transitions) {
+    for (const entry of transitions) {
+      if (entry.kind === 'in') continue;
+      const animation = play(entry, false);
+      if (animation) {
+        entry.leaving = true;
+        animations.push(animation);
+      }
+    }
+  }
+  mounted.owner.release();
+  if (animations.length === 0) {
+    removeRange(mounted.range);
+    return;
+  }
+  stats.leaving++;
+  const record = {
+    finish() {
+      if (!block.leaving || !block.leaving.delete(record)) return;
+      stats.leaving--;
+      for (const animation of animations) animation.cancel();
+      removeRange(mounted.range);
+    },
+  };
+  (block.leaving || (block.leaving = new Set())).add(record);
+  Promise.all(animations.map((animation) => animation.finished)).then(() => record.finish(), () => record.finish());
+}
+
+// measureRows records where the rows with animate: are before a keyed
+// #each reorders (task 096); flipRows animates those that moved.
+function measureRows(rows) {
+  let rects = null;
+  for (const mounted of rows) {
+    const animation = mounted.owner.animation;
+    if (!animation || !animation.node.isConnected) continue;
+    (rects || (rects = new Map())).set(mounted, animation.node.getBoundingClientRect());
+  }
+  return rects;
+}
+
+function flipRows(rects) {
+  if (reducedMotion()) return;
+  for (const [mounted, from] of rects) {
+    const animation = mounted.owner.animation;
+    if (mounted.owner.done || !animation.node.isConnected) continue;
+    if (animation.running) {
+      animation.running.animation.cancel();
+      animation.running = null;
+    }
+    const to = animation.node.getBoundingClientRect();
+    if (from.left === to.left && from.top === to.top && from.width === to.width && from.height === to.height) continue;
+    const config = animation.fn(animation.node, { from, to }, animation.read ? animation.read() : undefined);
+    const running = animateCss(animation.node, config, 0, 1, 'backwards');
+    if (!running) continue;
+    animation.running = running;
+    running.animation.finished.then(() => {
+      if (animation.running === running) animation.running = null;
+    }, () => {});
+  }
+}
+
 // ── Root ─────────────────────────────────────────────────────────────────
 
 // $$mountRoot mounts a component's root fragment into target (an element,
 // or a comment anchor that the content is inserted before).
-export function $$mountRoot(target, fragmentFn, scope, ctx) {
+export function $$mountRoot(target, fragmentFn, scope, ctx, group) {
   const owner = $$owner(null);
+  if (group) owner.group = group;
   const before = target.nodeType === 8 ? target : null;
   const parent = before ? before.parentNode : target;
   // The view exists before the fragment builds, so that a fragment that
@@ -370,9 +559,13 @@ function withComponentCursor(cursor, mount) {
 export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getRoot) {
   // The script has run; the template gets the component's context.
   const ctx = $$contextClaim();
+  // The root joins the transition group of its position (task 096).
+  const group = componentGroup;
+  componentGroup = null;
   const outer = $$session ? $$session.cursors[$$session.cursors.length - 1] || null : null;
   if (outer) {
     const owner = $$owner(null);
+    if (group) owner.group = group;
     const view = rootView(owner, null, ctx);
     if (wrapperScope != null) {
       const wrapper = outer.element('div', wrapperScope ? [wrapperScope, '', 'style', 'display: contents;'] : ['style', 'display: contents;']);
@@ -392,9 +585,9 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
       if (wrapperScope) wrapper.setAttribute(wrapperScope, '');
       wrapper.style.display = 'contents';
       setRoot(wrapper);
-      view = $$mountRoot(wrapper, fragmentFn, undefined, ctx);
+      view = $$mountRoot(wrapper, fragmentFn, undefined, ctx, group);
     } else {
-      view = $$mountRoot(document.createDocumentFragment(), fragmentFn, undefined, ctx);
+      view = $$mountRoot(document.createDocumentFragment(), fragmentFn, undefined, ctx, group);
     }
     const root = getRoot();
     if (target.nodeType === 8) target.parentNode.insertBefore(root, target);
@@ -481,8 +674,9 @@ export function $$if(cursor, select, branches, changed) {
       if (!changed || changed(dirty)) {
         const next = select();
         if (next !== index) {
-          unmount(current);
+          leave(current, block);
           show(next);
+          introduce(current);
           return;
         }
       }
@@ -521,8 +715,9 @@ export function $$key(cursor, value, body, changed) {
         const next = value();
         if (next !== key) {
           key = next;
-          unmount(current);
+          leave(current, block);
           current = mountFragment(body, undefined, anchor, cursor.ctx);
+          introduce(current);
           return;
         }
       }
@@ -553,20 +748,27 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
   let byKey = key ? new Map() : null;
   let empty = null;
 
-  const mountRow = (item, index, before) => mountFragment(row, { item, index }, before, cursor.ctx);
+  // A row or fallback mounted by an update plays its intro (task 096).
+  const mountRow = (item, index, before, initial) => {
+    const mounted = mountFragment(row, { item, index }, before, cursor.ctx);
+    if (!initial) introduce(mounted);
+    return mounted;
+  };
 
   const reconcile = (dirty, initial) => {
     const items = Array.from(collection() || []);
     if (items.length === 0) {
-      for (const mounted of rows) unmount(mounted);
+      for (const mounted of rows) leave(mounted, block);
       rows = [];
       if (byKey) byKey.clear();
-      if (fallback && !empty) empty = mountFragment(fallback, undefined, anchor, cursor.ctx);
-      else updateMounted(empty, dirty, false);
+      if (fallback && !empty) {
+        empty = mountFragment(fallback, undefined, anchor, cursor.ctx);
+        if (!initial) introduce(empty);
+      } else updateMounted(empty, dirty, false);
       return;
     }
     if (empty) {
-      unmount(empty);
+      leave(empty, block);
       empty = null;
     }
     if (!byKey) {
@@ -577,10 +779,10 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
           rows[i].scope.index = i;
           updateMounted(rows[i], dirty, true);
         } else {
-          rows.push(mountRow(items[i], i, anchor));
+          rows.push(mountRow(items[i], i, anchor, initial));
         }
       }
-      for (const mounted of rows.splice(items.length)) unmount(mounted);
+      for (const mounted of rows.splice(items.length)) leave(mounted, block);
       return;
     }
     // Keyed: retain, move, create and remove rows by key; keep focus inside a
@@ -588,6 +790,8 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     const focused = initial ? null : document.activeElement;
     const restoreFocus = focused && focused !== document.body &&
       rows.some((mounted) => rangeContains(mounted.range, focused));
+    // animate: rows are measured before they move (task 096).
+    const rects = initial ? null : measureRows(rows);
     const next = [];
     const nextKeys = new Map();
     for (let i = 0; i < items.length; i++) {
@@ -599,7 +803,7 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
         mounted.scope.index = i;
         updateMounted(mounted, dirty, true);
       } else {
-        mounted = mountRow(items[i], i, anchor);
+        mounted = mountRow(items[i], i, anchor, initial);
         byKey.set(rowKey, mounted);
       }
       mounted.key = rowKey;
@@ -607,7 +811,7 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     }
     for (const [rowKey, mounted] of byKey) {
       if (!nextKeys.has(rowKey)) {
-        unmount(mounted);
+        leave(mounted, block);
         byKey.delete(rowKey);
       }
     }
@@ -619,6 +823,7 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
       before = mounted.range.start;
     }
     rows = next;
+    if (rects) flipRows(rects);
     if (restoreFocus && focused.isConnected && typeof focused.focus === 'function' &&
         document.activeElement !== focused) {
       focused.focus();
@@ -714,12 +919,16 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
   let current = null;
   let state = -1;
 
+  // started: branches shown after the first render play transitions.
+  let started = false;
   const show = (nextState, scope) => {
-    unmount(current);
+    if (started) leave(current, block);
+    else unmount(current);
     current = null;
     state = nextState;
     const fragment = nextState === 0 ? pending : nextState === 1 ? then : catcher;
     if (fragment) current = mountFragment(fragment, scope, anchor, cursor.ctx);
+    if (started) introduce(current);
   };
 
   // drive evaluates the operand; adopted keeps the adopted pending branch.
@@ -785,6 +994,7 @@ export function $$await(cursor, operand, pending, then, catcher, changed) {
     else current.owner.release();
   });
   if (!cursor.hydrating) drive();
+  started = true;
   return block;
 }
 
@@ -809,16 +1019,27 @@ export function $$component(cursor, factory, props, slots, events, changed, scop
   // The child's script runs in its own context frame under the context of
   // this position (task 090); the props are computed before it opens.
   const ctx = cursor.ctx;
+  const group = groupOf(cursor.owner);
+  // withGroup hands the transition group to the child's root ($$mountComponent).
+  const withGroup = (create) => () => {
+    const previous = componentGroup;
+    componentGroup = group;
+    try {
+      return create();
+    } finally {
+      componentGroup = previous;
+    }
+  };
   if (cursor.hydrating) {
     // The child factory adopts the server DOM inside the component range.
     cursor.open();
     const initial = props();
-    instance = withComponentCursor(cursor, () => createInstance(() => $$contextRun(ctx, () => factory(null, initial, slots || {}))));
+    instance = withComponentCursor(cursor, withGroup(() => createInstance(() => $$contextRun(ctx, () => factory(null, initial, slots || {})))));
     anchor = cursor.close();
   } else {
     anchor = cursor.comment();
     const initial = props();
-    const create = () => createInstance(() => $$contextRun(ctx, () => factory(anchor, initial, slots || {})));
+    const create = withGroup(() => createInstance(() => $$contextRun(ctx, () => factory(anchor, initial, slots || {}))));
     // A block created while a root hydrates (a repaired range) creates its
     // children too.
     instance = $$session ? withComponentCursor(null, create) : create();

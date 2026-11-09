@@ -199,7 +199,7 @@ func validateScriptFormsWithAnalysis(prog *jsast.JsProgram, analysis *analyzer.A
 		case *jsast.JsCallExpr:
 			validateCallForm(x, analysis, ds)
 		case *jsast.JsImportDecl:
-			if x.Source == "vela" || x.Source == "vela/store" {
+			if analyzer.IsVelaModule(x.Source) {
 				for _, spec := range x.Specifiers {
 					if spec.Imported == "$$dispatch" || spec.Local == "$$dispatch" {
 						errorOver(ds, x, "VELA-BUILTIN-IMPORT", "Remove the import and call $$dispatch(name, detail) directly.", "$$dispatch is a Vela builtin; call it directly instead of importing it")
@@ -913,7 +913,7 @@ func validateHeadContent(nodes []sfcast.Node, templateOffset int, ds *diag.DiagS
 			for _, attr := range n.Attrs {
 				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir || attr.IsAction {
 					apos, aend := at(attr.Span)
-					ds.Report(diag.SevError, apos, aend, "VELA-HEAD-CONTENT", "Use static or :dynamic attributes.", "events, bindings, actions and class:/style: directives are not allowed in <vela:head>")
+					ds.Report(diag.SevError, apos, aend, "VELA-HEAD-CONTENT", "Use static or :dynamic attributes.", "events, bindings, actions, transitions and class:/style: directives are not allowed in <vela:head>")
 				}
 			}
 			for _, child := range n.Children {
@@ -1082,17 +1082,26 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 			}
 		}
 	}
+	// animateRows are the elements animate: may go on: the only element of
+	// a keyed {#each} row (task 096).
+	animateRows := map[*sfcast.ElementNode]bool{}
 	walk = func(ns []sfcast.Node) {
 		for _, node := range ns {
 			switch n := node.(type) {
 			case *sfcast.ElementNode:
 				checkAttrs(n.Attrs)
+				checkTransitions(n, animateRows[n], report)
 				walk(n.Children)
 			case *sfcast.ComponentNode:
 				checkAttrs(n.Attrs)
 				for _, a := range n.Attrs {
-					if a != nil && a.IsAction {
+					if a == nil || !a.IsAction {
+						continue
+					}
+					if a.Directive == "use" {
 						report(a, "VELA-ACTION-TARGET", "Put use: on an element inside the component, or pass the action to it as a prop.", "use:%s is not allowed on a component; actions attach to elements", a.Name)
+					} else {
+						report(a, "VELA-ACTION-TARGET", "Put "+a.Directive+": on an element inside the component.", "%s:%s is not allowed on a component; transitions and animations attach to elements", a.Directive, a.Name)
 					}
 				}
 				for _, slot := range n.Slots {
@@ -1103,7 +1112,13 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 					walk(branch.Children)
 				}
 			case *sfcast.EachBlockNode:
+				if n.HasKey() {
+					if el := soleElement(n.Children); el != nil {
+						animateRows[el] = true
+					}
+				}
 				walk(n.Children)
+				walk(n.ElseChildren)
 			case *sfcast.AwaitBlockNode:
 				walk(n.PendingChildren)
 				walk(n.ThenChildren)
@@ -1117,4 +1132,50 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 		}
 	}
 	walk(nodes)
+}
+
+// checkTransitions checks the transition:, in:, out: and animate:
+// directives of an element (task 096): one of each, transition: not with
+// in: or out:, and animate: only on the element of a keyed {#each} row.
+func checkTransitions(el *sfcast.ElementNode, animateOK bool, report func(*sfcast.Attr, string, string, string, ...interface{})) {
+	seen := map[string]*sfcast.Attr{}
+	for _, a := range el.Attrs {
+		if a == nil || !a.IsAction || a.Directive == "use" {
+			continue
+		}
+		if first := seen[a.Directive]; first != nil {
+			report(a, "VELA-TRANSITION-CONFLICT", "Keep one "+a.Directive+": directive.", "<%s> has more than one %s: directive", el.Tag, a.Directive)
+		}
+		seen[a.Directive] = a
+		if a.Directive == "animate" && !animateOK {
+			report(a, "VELA-ANIMATE-PLACEMENT", "Put animate: on the only element of a keyed {#each} row: {#each items as item (item.id)}<li animate:flip>…</li>{/each}.", "animate:%s is allowed only on the only element of a keyed {#each} row", a.Name)
+		}
+	}
+	if both := seen["transition"]; both != nil && (seen["in"] != nil || seen["out"] != nil) {
+		report(both, "VELA-TRANSITION-CONFLICT", "Use transition: for both directions, or in: and out:.", "<%s> has transition: and in:/out:; transition: already covers both directions", el.Tag)
+	}
+}
+
+// soleElement returns the only element of nodes when the rest is
+// whitespace, or nil.
+func soleElement(nodes []sfcast.Node) *sfcast.ElementNode {
+	var found *sfcast.ElementNode
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *sfcast.ElementNode:
+			if found != nil {
+				return nil
+			}
+			found = n
+		case *sfcast.TextNode:
+			for _, part := range n.Parts {
+				if !part.Static || strings.TrimSpace(part.Value) != "" {
+					return nil
+				}
+			}
+		default:
+			return nil
+		}
+	}
+	return found
 }

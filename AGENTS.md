@@ -112,6 +112,12 @@ each optional section, in any order:
   and runs only in the browser, once the element is in the document. Use
   it on elements, not components; type it with `Action<E, P>` from
   `vela` (`import type`).
+- Animate an element that a block adds or removes with
+  `transition:fade`, `in:fly={{ y: 20 }}` or `out:slide` (functions from
+  `vela/transition`), and the rows of a keyed `{#each}` with
+  `animate:flip` on the row's only element. Do not animate with
+  `$effect` and manual DOM work. Transitions are local to their block and
+  do not play on the first render or during hydration.
 - Use `class:name={condition}` for a conditional class and
   `style:property={expression}` for a single dynamic inline CSS property.
   Keep structural styling in the component stylesheet.
@@ -349,7 +355,6 @@ Do not generate or rely on the following in Vela applications:
 - TypeScript that generates code (`enum`, value namespaces, parameter
   properties), `.tsx`/`.jsx` modules, or JSX.
 - Svelte 5 `$props()`, snippets, or `{@render}`.
-- `transition:`, `in:`, or `out:` directives.
 - `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:head>`
   (use `<vela:head>`), `<svelte:element>`, `<svelte:self>`, `<svelte:window>`,
   `<svelte:document>`, or `<svelte:body>`.

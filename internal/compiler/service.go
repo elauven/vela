@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/internal/codegen"
 	"github.com/elauven/vela/internal/diag"
 	"github.com/elauven/vela/internal/jsast"
@@ -64,7 +65,7 @@ func sourceModuleImports(src string, prog *jsast.JsProgram) []ModuleImport {
 		seen[spec] = true
 		imp := ModuleImport{Specifier: spec}
 		switch {
-		case spec == "vela" || spec == "vela/store":
+		case analyzer.IsVelaModule(spec):
 			imp.Kind = "runtime"
 		case codegen.IsPackageSpecifier(spec):
 			imp.Kind = "package"

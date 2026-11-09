@@ -1591,3 +1591,111 @@ func TestRuntimeNestingMatrix_ActionBranchRemovedBeforeStart(t *testing.T) {
 		{"assertGlobal": "__log", "equals": "click"},
 	})
 }
+
+// ── Outros (task 096) ────────────────────────────────────────────
+// An outro holds the leaving fragment until its animation finishes
+// (finishAnimations), and the outer construct taking the subtree away
+// mid-outro leaves no node behind.
+
+const outroScript = `
+  import { fade } from 'vela/transition';
+  let outer = $state(true);
+  let inner = $state(true);
+  let token = $state(1);
+  let items = $state(['a', 'b']);
+  let promise = $state(Promise.resolve('one'));
+`
+
+func outroButtons(extra string) string {
+	return `<button class="o" @click={() => outer = !outer}>o</button>
+  <button class="i" @click={() => inner = !inner}>i</button>
+  <button class="k" @click={() => token++}>k</button>
+  <button class="d" @click={() => items = items.slice(1)}>d</button>
+  <button class="p" @click={() => promise = Promise.resolve('two')}>p</button>` + extra
+}
+
+func TestRuntimeNestingMatrix_OutroInIf(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}<section>{#if inner}<span class="x" transition:fade>x</span>{/if}</section>{/if}
+</div></template>`
+	assertRuntime(t, "OutroInIf", src, []rtStep{
+		{"click": "button.i"},
+		{"assertCount": "span.x", "equals": 1},
+		// The outer block removes the section while the inner outro runs.
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertCount": "section", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"click": "button.i"},
+		{"assertCount": "span.x", "equals": 1},
+		{"finishAnimations": true},
+		{"assertCount": "span.x", "equals": 1},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInEach(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}<ul>{#each items as item (item)}<li transition:fade>{item}</li>{/each}</ul>{/if}
+</div></template>`
+	assertRuntime(t, "OutroInEach", src, []rtStep{
+		{"click": "button.d"},
+		{"assertCount": "li", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "ul", "equals": "b"},
+		{"click": "button.d"},
+		{"assertCount": "li", "equals": 1},
+		{"click": "button.o"},
+		{"assertCount": "li", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInKey(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}{#key token}<span class="x" transition:fade>{token}</span>{/key}{/if}
+</div></template>`
+	assertRuntime(t, "OutroInKey", src, []rtStep{
+		{"click": "button.k"},
+		{"assertCount": "span.x", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "span.x", "equals": "2"},
+		{"click": "button.k"},
+		{"assertCount": "span.x", "equals": 2},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInAwait(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}{#await promise}<i>wait</i>{:then value}<span class="x" transition:fade>{value}</span>{/await}{/if}
+</div></template>`
+	assertRuntime(t, "OutroInAwait", src, []rtStep{
+		{"tick": true},
+		{"assertText": "span.x", "equals": "one"},
+		{"finishAnimations": true},
+		// A new promise: the old value leaves while the new one comes.
+		{"click": "button.p"},
+		{"tick": true},
+		{"assertCount": "span.x", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "span.x", "equals": "two"},
+		{"click": "button.p"},
+		{"tick": true},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertCount": "i", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}

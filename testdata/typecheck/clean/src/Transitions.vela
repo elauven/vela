@@ -1,0 +1,21 @@
+<script lang="ts">
+  import { fade, fly, slide, scale, cubicInOut } from 'vela/transition';
+  import { flip } from 'vela/animate';
+  import type { Transition } from 'vela/transition';
+  let show = $state(true);
+  let items = $state([1, 2]);
+  const grow: Transition<HTMLElement, { by: number }> = (node, params) => ({
+    duration: params.by * 10,
+    css: (t) => `transform: scale(${t}); width: ${node.offsetWidth}px`,
+  });
+</script>
+
+<template>
+  {#if show}
+    <p transition:fade>a</p>
+    <b in:fly={{ y: 20, easing: cubicInOut }} out:slide={{ axis: 'x' }}>b</b>
+    <i transition:scale={{ start: 0.5 }}>c</i>
+    <em in:grow={{ by: 3 }}>d</em>
+  {/if}
+  <ul>{#each items as item (item)}<li animate:flip={{ duration: (d) => d * 2 }}>{item}</li>{/each}</ul>
+</template>

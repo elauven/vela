@@ -964,13 +964,16 @@ type Attr struct {
 	IsBindThis bool // bind:this={ref} → write the live element into `ref`
 	IsClassDir bool // class:foo={cond} → toggle the `foo` class based on cond
 	IsStyleDir bool
-	// IsAction marks use:name={params} (task 093): Name is the action
-	// reference as written (`tooltip`, `lib.tooltip`), Action its parsed
-	// expression, and Expr the parameters (nil without a value).
-	IsAction bool
-	Action   *TemplateExpr
-	Pos      int // style:foo={expr} → set inline style property `foo` to expr
-	Expr     *TemplateExpr
+	// IsAction marks a directive that names a function (task 093):
+	// use:name={params}, and transition:, in:, out: and animate: (task
+	// 096), told apart by Directive. Name is the function reference as
+	// written (`tooltip`, `lib.tooltip`), Action its parsed expression, and
+	// Expr the parameters (nil without a value).
+	IsAction  bool
+	Directive string // "use", "transition", "in", "out" or "animate"
+	Action    *TemplateExpr
+	Pos       int // style:foo={expr} → set inline style property `foo` to expr
+	Expr      *TemplateExpr
 }
 
 func (e *ElementNode) NodeKind() string   { return "element" }
@@ -1791,15 +1794,21 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				Name: rest, Value: value,
 				IsBind: true, IsTwoWay: true,
 			})
-		case strings.HasPrefix(name, "use:"):
-			ref := name[len("use:"):]
+		case functionDirective(name) != "":
+			directive := functionDirective(name)
+			ref := name[len(directive)+1:]
+			if directive != "use" {
+				if bar := strings.IndexByte(ref, '|'); bar >= 0 {
+					return &TemplateSyntaxError{Pos: start + len(directive) + 1 + bar, Err: fmt.Errorf("%s:%s: modifiers such as |%s are not supported; transitions are local, they play when their own block adds or removes the element", directive, ref[:bar], ref[bar+1:])}
+				}
+			}
 			if !actionReference(ref) {
-				return &TemplateSyntaxError{Pos: start + len("use:"), Err: fmt.Errorf("use:%s must name an action: a variable or a member such as use:tooltip or use:lib.tooltip", ref)}
+				return &TemplateSyntaxError{Pos: start + len(directive) + 1, Err: fmt.Errorf("%s:%s must name %s: a variable or a member such as %s:%s or %s:lib.%s", directive, ref, directiveNoun[directive], directive, directiveExample[directive], directive, directiveExample[directive])}
 			}
 			if valueKind != AttrValueMissing && valueKind != AttrValueBraced {
-				return &TemplateSyntaxError{Pos: valuePos, Err: fmt.Errorf("use:%s takes its parameters in braces: use:%s={params}", ref, ref)}
+				return &TemplateSyntaxError{Pos: valuePos, Err: fmt.Errorf("%s:%s takes its parameters in braces: %s:%s={params}", directive, ref, directive, ref)}
 			}
-			elem.Attrs = append(elem.Attrs, &Attr{Name: ref, Value: value, IsAction: true})
+			elem.Attrs = append(elem.Attrs, &Attr{Name: ref, Value: value, IsAction: true, Directive: directive})
 		case strings.HasPrefix(name, ":"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsBind: true})
 		default:
@@ -1855,10 +1864,10 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		if !a.IsAction {
 			continue
 		}
-		a.Action = p.templateExpr(a.Name, a.Pos+len("use:"))
+		a.Action = p.templateExpr(a.Name, a.Pos+len(a.Directive)+1)
 		if a.Value != "" {
 			exprPos := a.Pos
-			from := a.Pos + len("use:") + len(a.Name)
+			from := a.Pos + len(a.Directive) + 1 + len(a.Name)
 			if i := strings.Index(p.src[from:], "{"); i >= 0 {
 				exprPos = from + i + 1
 			}
@@ -1867,6 +1876,25 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 	}
 	mergeStaticClass(elem)
 	return nil
+}
+
+// functionDirective returns the directive of an attribute name that names
+// a function (use:, transition:, in:, out:, animate:), or "".
+func functionDirective(name string) string {
+	for _, directive := range []string{"use", "transition", "in", "out", "animate"} {
+		if strings.HasPrefix(name, directive+":") {
+			return directive
+		}
+	}
+	return ""
+}
+
+var directiveNoun = map[string]string{"use": "an action", "transition": "a transition", "in": "a transition", "out": "a transition", "animate": "an animation"}
+var directiveExample = map[string]string{"use": "tooltip", "transition": "fade", "in": "fly", "out": "fade", "animate": "flip"}
+
+// IsTransition reports a transition:, in: or out: directive.
+func (a *Attr) IsTransition() bool {
+	return a != nil && (a.Directive == "transition" || a.Directive == "in" || a.Directive == "out")
 }
 
 // actionReference reports whether ref, the name of a use: directive, is an

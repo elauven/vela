@@ -292,7 +292,11 @@ func (m *Model) clientJS() []byte {
 	b.WriteString("import { start } from '@govela/app/client';\n")
 	b.WriteString("import { VelaApp } from './VelaApp.vela';\n")
 	b.WriteString("import { routes } from './routes.js';\n\n")
-	fmt.Fprintf(&b, "start({ VelaApp, routes, root: %s });\n", jsString(app.RootID))
+	options := ""
+	if m.Config.ViewTransitions {
+		options = ", viewTransitions: true"
+	}
+	fmt.Fprintf(&b, "start({ VelaApp, routes, root: %s%s });\n", jsString(app.RootID), options)
 	return b.Bytes()
 }
 

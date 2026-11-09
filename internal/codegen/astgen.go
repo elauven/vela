@@ -1291,7 +1291,7 @@ func (g *ASTGen) buildImportDecls() []jsast.JsStmt {
 		defaultName := imp.DefaultName
 		namespace := imp.Namespace
 		specifiers := append([]jsast.JsImportSpec(nil), imp.Specifiers...)
-		if src == "vela/store" || src == "vela" {
+		if analyzer.IsVelaModule(src) {
 			src = "./runtime.js"
 			kept := specifiers[:0]
 			for _, spec := range specifiers {
