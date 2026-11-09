@@ -696,6 +696,9 @@ func isFullyStatic(node sfcast.Node) bool {
 		return true
 
 	case *sfcast.ElementNode:
+		if sfcast.IsGlobalTag(n.Tag) {
+			return false
+		}
 		for _, attr := range n.Attrs {
 			if attr.IsEvent || attr.IsBind || attr.IsTwoWay || attr.IsBindThis ||
 				attr.IsClassDir || attr.IsStyleDir {

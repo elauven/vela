@@ -12,6 +12,10 @@ declare const $$error: any;
 declare const $$retry: () => void;
 declare function $$on<K extends keyof HTMLElementEventMap>(event: K, handler: (event: HTMLElementEventMap[K]) => any): void;
 declare function $$on(event: string, handler: (event: Event) => any): void;
+declare function $$onWindow<K extends keyof WindowEventMap>(event: K, handler: (event: WindowEventMap[K]) => any): void;
+declare function $$onWindow(event: string, handler: (event: Event) => any): void;
+declare function $$onDocument<K extends keyof DocumentEventMap>(event: K, handler: (event: DocumentEventMap[K]) => any): void;
+declare function $$onDocument(event: string, handler: (event: Event) => any): void;
 
 /** The component of a value of <vela:component :this>, a Lazy one loaded. */
 type $$VelaUnlazy<C> = C extends import('vela').Lazy<infer L> ? L : C;

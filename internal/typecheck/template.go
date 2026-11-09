@@ -3,6 +3,8 @@ package typecheck
 import (
 	"strconv"
 	"strings"
+
+	"github.com/elauven/vela/internal/sfcast"
 )
 
 // The lexical reading of a template: the {…} of text and blocks, the tags
@@ -378,6 +380,26 @@ func writeTemplate(w *writer, start, end int) {
 // writeAttr writes the expression of a dynamic attribute of an element: an
 // event handler gets its event type from $$on.
 func writeAttr(w *writer, r templateRegion) {
+	if sfcast.IsGlobalTag(r.tag) {
+		// <vela:window> and <vela:document> (task 095): a handler gets the
+		// event of the target, a binding assigns the value of the target.
+		if strings.HasPrefix(r.attr, "@") {
+			helper := "$$onWindow"
+			if r.tag == sfcast.DocumentTag {
+				helper = "$$onDocument"
+			}
+			w.gen(helper + "(\"" + r.attr[1:] + "\", ")
+			w.copyTrimmed(r.start, r.end)
+			w.gen(");\n")
+			return
+		}
+		if binding, ok := sfcast.GlobalBindings[r.tag][strings.TrimPrefix(r.attr, "bind:")]; ok && strings.HasPrefix(r.attr, "bind:") {
+			w.gen("(($$v: " + binding.Type + ") => { ")
+			w.copyTrimmed(r.start, r.end)
+			w.gen(" = $$v; });\n")
+			return
+		}
+	}
 	if strings.HasPrefix(r.attr, "@") {
 		event := strings.SplitN(r.attr[1:], ".", 2)[0]
 		w.gen("$$on(\"" + event + "\", ")

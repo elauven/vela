@@ -422,8 +422,10 @@ func checkSSRBlocksNesting(filename, source string, nodes []sfcast.Node, links m
 		if err != nil || child.TemplateAST == nil {
 			return ""
 		}
-		if len(child.TemplateAST.Nodes) == 1 {
-			if element, ok := child.TemplateAST.Nodes[0].(*sfcast.ElementNode); ok {
+		_, rendered := sfcast.SplitHead(child.TemplateAST.Nodes)
+		_, rendered = sfcast.SplitGlobals(rendered)
+		if len(rendered) == 1 {
+			if element, ok := rendered[0].(*sfcast.ElementNode); ok {
 				return element.Tag
 			}
 		}

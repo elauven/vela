@@ -171,6 +171,8 @@ func (g *ASTGen) buildBlocksView(nodes []sfcast.Node) {
 	g.blocks.deps = map[string]bool{}
 	// <vela:head> renders into document.head, not in place (task 091).
 	head, nodes := sfcast.SplitHead(nodes)
+	// <vela:window> and <vela:document> render nothing (task 095).
+	globals, nodes := sfcast.SplitGlobals(nodes)
 	rootIsElement := len(nodes) == 1
 	if rootIsElement {
 		_, rootIsElement = nodes[0].(*sfcast.ElementNode)
@@ -181,8 +183,14 @@ func (g *ASTGen) buildBlocksView(nodes []sfcast.Node) {
 	g.body = append(g.body, jsast.GenLet("$$root", jsast.GenNull()))
 	// A single root element is assigned to $$root by the root fragment.
 	g.blocks.assignRoot = rootIsElement
-	if head != nil {
-		nodes = append(append([]sfcast.Node{}, nodes...), head)
+	if head != nil || len(globals) > 0 {
+		nodes = append([]sfcast.Node{}, nodes...)
+		for _, global := range globals {
+			nodes = append(nodes, global)
+		}
+		if head != nil {
+			nodes = append(nodes, head)
+		}
 	}
 	root := g.buildBlocksFragment(nodes, nil)
 	g.body = append(g.body, root)
@@ -352,6 +360,10 @@ func (g *ASTGen) blocksStatic(nodes []sfcast.Node) {
 func (g *ASTGen) buildBlocksNode(node sfcast.Node, isRoot bool) {
 	switch n := node.(type) {
 	case *sfcast.ElementNode:
+		if sfcast.IsGlobalTag(n.Tag) {
+			g.buildBlocksGlobal(n)
+			break
+		}
 		g.buildBlocksElement(n, isRoot)
 	case *sfcast.TextNode:
 		g.buildBlocksText(n)

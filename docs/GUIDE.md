@@ -707,6 +707,48 @@ With server rendering the tags are in the server's `<head>` (a Vela App
 writes them; with your own server, see [SSR.md](SSR.md)), and the
 browser takes them over without creating them again.
 
+### Window and document
+
+`<vela:window>` and `<vela:document>` listen on `window` and `document`
+and bind their read-only values, without an `$effect` that adds and
+removes the listeners:
+
+```vela
+<script>
+  let width = $state(0);
+  let online = $state(true);
+  let hidden = $state(false);
+  let menuOpen = $state(false);
+
+  function onKey(event) {
+    if (event.key === 'Escape') menuOpen = false;
+  }
+</script>
+
+<template>
+  <vela:window @keydown={onKey} bind:innerWidth={width} bind:online={online} />
+  <vela:document @visibilitychange={() => (hidden = document.hidden)} />
+  <p>{width}px, {online ? 'online' : 'offline'}</p>
+</template>
+```
+
+Each takes `@event={handler}` listeners and `bind:` of a read-only value
+into a `$state` or a prop:
+
+| Element | Bindable values |
+|---|---|
+| `<vela:window>` | `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `scrollX`, `scrollY`, `devicePixelRatio`, `online` |
+| `<vela:document>` | `visibilityState`, `activeElement`, `fullscreenElement`, `pointerLockElement` |
+
+A component has at most one of each, at the top level of its template,
+without content. The listeners go away with the component. A bound value
+is written after the component mounts and again when it changes; the
+binding never writes back (assigning `width` does not resize the window).
+
+The server renders neither element: a bound value keeps its initial
+`$state` value there, and the browser writes the live one after
+hydration, so the server HTML and the hydrated page agree.
+
 ### Context
 
 Context passes values down the component tree without props on every level:
@@ -865,6 +907,7 @@ Scoping is identical either way.
 | `{#client}` `{:else}` `{/client}` | browser-only content, fallback on the server |
 | `{#boundary}` `{:catch error, retry}` `{/boundary}` | error boundary: fallback when the content fails |
 | `<vela:head>` | title, meta, link and JSON-LD of the document head |
+| `<vela:window @resize={fn} bind:innerWidth={w} />` | listeners and read-only values of `window` (`<vela:document>` for `document`) |
 | `onMount` / `onDestroy` | lifecycle (import from `vela`) |
 
 ## 12. TypeScript

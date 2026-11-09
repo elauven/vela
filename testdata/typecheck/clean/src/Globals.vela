@@ -1,0 +1,12 @@
+<script lang="ts">
+  let width = $state(0);
+  let online = $state(true);
+  let active = $state<Element | null>(null);
+  let keys = $state('');
+</script>
+
+<template>
+  <vela:window @keydown={(event) => (keys += event.key)} bind:innerWidth={width} bind:online={online} />
+  <vela:document @pointerdown={(event) => (keys += event.pointerType)} bind:activeElement={active} />
+  <p>{width} {online} {active ? active.localName : ''} {keys}</p>
+</template>

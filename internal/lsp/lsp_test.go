@@ -489,6 +489,14 @@ func TestCompletion(t *testing.T) {
 	check("boundary catch", items, []string{"failure", "again", "count"}, nil)
 	items, _ = complete(14, "<p>{count}</p>", "{#boundary}<p>{|}</p>{:catch failure, again}<b/>{/boundary}")
 	check("boundary body", items, []string{"count"}, []string{"failure", "again"})
+
+	// <vela:window> and <vela:document> (task 095).
+	items, _ = complete(15, "    <p>{count}</p>", "    <|")
+	check("global tags", items, []string{"vela:window", "vela:document"}, nil)
+	items, _ = complete(16, "    <p>{count}</p>", "    <vela:window |/>")
+	check("window bindings", items, []string{"bind:innerWidth", "bind:scrollY", "bind:online"}, []string{"bind:visibilityState"})
+	items, _ = complete(17, "    <p>{count}</p>", "    <vela:document |/>")
+	check("document bindings", items, []string{"bind:visibilityState", "bind:activeElement"}, []string{"bind:innerWidth"})
 }
 
 func keys(m map[string]CompletionItem) []string {
