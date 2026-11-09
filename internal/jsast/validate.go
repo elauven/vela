@@ -548,12 +548,22 @@ func terminatorName(s JsStmt) string {
 	return "control-flow exit"
 }
 
-// onlyHoistedAfter reports statements that are all function declarations
-// (hoisted, so reachable) or empty.
+// onlyHoistedAfter reports statements that are all function declarations,
+// `var` declarations without initializers (hoisted, so reachable) or empty.
 func onlyHoistedAfter(rest []JsStmt) bool {
 	for _, stmt := range rest {
-		switch stmt.(type) {
+		switch x := stmt.(type) {
 		case *JsFuncDecl, *JsEmptyStmt:
+		case *JsVarDecl:
+			// `var a;` after a terminator only declares a hoisted name.
+			if x.Kind != "var" {
+				return false
+			}
+			for _, d := range x.Decls {
+				if d.Init != nil {
+					return false
+				}
+			}
 		default:
 			return false
 		}

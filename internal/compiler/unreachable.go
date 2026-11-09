@@ -39,24 +39,103 @@ const (
 func (f flowOutcome) terminates() bool { return f != flowContinue }
 
 // DetectUnreachable scans a program for statements after a definite
-// terminator and emits warnings via ds.
+// terminator and emits warnings via ds.  It then removes those
+// statements from prog: the warning says they never run, and the
+// generated-AST validator rejects unreachable statements (task 068).
+// Hoisted declarations stay so that bindings keep their meaning: a
+// function declaration is kept whole, a `var` keeps its names without
+// initializers.  Everything else after the terminator is dropped.
 func DetectUnreachable(prog *jsast.JsProgram, ds *diag.DiagSet) {
 	if prog == nil {
 		return
 	}
-	analyzeStmts(prog.Body, ds)
+	analyzeStmts(&prog.Body, ds)
+}
+
+// pruneDead returns what remains of the dead statements after a
+// terminator: function declarations unchanged and `var` declarations
+// stripped of their initializers.
+func pruneDead(dead []jsast.JsStmt) []jsast.JsStmt {
+	var kept []jsast.JsStmt
+	for _, s := range dead {
+		switch n := s.(type) {
+		case *jsast.JsFuncDecl:
+			kept = append(kept, n)
+		case *jsast.JsVarDecl:
+			if n.Kind != "var" {
+				continue
+			}
+			if decl := hoistedVar(n); decl != nil {
+				kept = append(kept, decl)
+			}
+		}
+	}
+	return kept
+}
+
+// hoistedVar returns `var a, b;` for the plain identifiers a dead `var`
+// declares, or nil when there are none.  A destructuring pattern
+// declares its names too; they are collected the same way.
+func hoistedVar(n *jsast.JsVarDecl) *jsast.JsVarDecl {
+	var decls []*jsast.JsVarDeclarator
+	for _, d := range n.Decls {
+		for _, id := range patternIdents(d.Id, nil) {
+			decls = append(decls, &jsast.JsVarDeclarator{BaseNode: d.BaseNode, Id: id})
+		}
+	}
+	if len(decls) == 0 {
+		return nil
+	}
+	return &jsast.JsVarDecl{BaseStmt: n.BaseStmt, Kind: "var", Decls: decls}
+}
+
+// patternIdents appends the identifiers a binding pattern declares.
+func patternIdents(e jsast.JsExpr, out []*jsast.JsIdent) []*jsast.JsIdent {
+	switch x := e.(type) {
+	case *jsast.JsIdent:
+		if x != nil {
+			out = append(out, x)
+		}
+	case *jsast.JsArrayExpr:
+		for _, el := range x.Elems {
+			if el != nil {
+				out = patternIdents(el, out)
+			}
+		}
+	case *jsast.JsObjectExpr:
+		for _, pr := range x.Props {
+			if pr.Value != nil {
+				out = patternIdents(pr.Value, out)
+			} else if pr.Key != nil {
+				out = patternIdents(pr.Key, out)
+			}
+		}
+	case *jsast.JsAssignExpr:
+		out = patternIdents(x.L, out)
+	case *jsast.JsSpreadExpr:
+		out = patternIdents(x.X, out)
+	}
+	return out
 }
 
 // analyzeStmts walks a list of statements in order.  Returns the
 // outcome of the last analysed statement so the caller can propagate
 // the verdict up (used by blocks inside if/else).
-func analyzeStmts(stmts []jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
+//
+// Statements after the terminator are pruned from *list in place (see
+// DetectUnreachable).
+func analyzeStmts(list *[]jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 	terminated := false
 	var firstDead jsast.JsStmt
 	last := flowContinue
+	stmts := *list
+	deadFrom := -1
 
-	for _, s := range stmts {
+	for i, s := range stmts {
 		if terminated {
+			if deadFrom < 0 {
+				deadFrom = i
+			}
 			if firstDead == nil {
 				firstDead = s
 				ds.Report(diag.SevWarning, s.NodePos(), s.NodeEnd(), "VELA-FLOW-UNREACHABLE", "Remove the statement or make the preceding control flow fall through.", "unreachable code")
@@ -71,6 +150,9 @@ func analyzeStmts(stmts []jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 		if last.terminates() {
 			terminated = true
 		}
+	}
+	if deadFrom >= 0 {
+		*list = append(stmts[:deadFrom:deadFrom], pruneDead(stmts[deadFrom:])...)
 	}
 	return last
 }
@@ -100,7 +182,7 @@ func analyzeStmt(s jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 		return flowBranch
 
 	case *jsast.JsBlock:
-		return analyzeStmts(n.Body, ds)
+		return analyzeStmts(&n.Body, ds)
 
 	case *jsast.JsIfStmt:
 		thenOut := analyzeStmt(n.Then, ds)
@@ -139,15 +221,15 @@ func analyzeStmt(s jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 	case *jsast.JsTryStmt:
 		var blockOut, handlerOut flowOutcome
 		if n.Block != nil {
-			blockOut = analyzeStmts(n.Block.Body, ds)
+			blockOut = analyzeStmts(&n.Block.Body, ds)
 		}
 		if n.Handler != nil {
-			handlerOut = analyzeStmts(n.Handler.Body, ds)
+			handlerOut = analyzeStmts(&n.Handler.Body, ds)
 		}
 		if n.Finalizer != nil {
 			// A finally that terminates always wins — even an
 			// otherwise-finished try/catch can't escape it.
-			if finOut := analyzeStmts(n.Finalizer.Body, ds); finOut.terminates() {
+			if finOut := analyzeStmts(&n.Finalizer.Body, ds); finOut.terminates() {
 				return finOut
 			}
 		}
@@ -167,7 +249,7 @@ func analyzeStmt(s jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 		// optional).  Just analyse each case body in isolation; don't
 		// try to claim the switch as a whole terminates.
 		for _, c := range n.Cases {
-			analyzeStmts(c.Body, ds)
+			analyzeStmts(&c.Body, ds)
 		}
 		return flowContinue
 
@@ -175,7 +257,7 @@ func analyzeStmt(s jsast.JsStmt, ds *diag.DiagSet) flowOutcome {
 		// A function declaration introduces a binding but doesn't
 		// execute any code at this point; its body has its own flow.
 		if n.Body != nil {
-			analyzeStmts(n.Body.Body, ds)
+			analyzeStmts(&n.Body.Body, ds)
 		}
 		return flowContinue
 
@@ -211,17 +293,17 @@ func scanNestedFunctions(node jsast.JsNode, ds *diag.DiagSet) {
 		switch fn := n.(type) {
 		case *jsast.JsFuncDecl:
 			if fn.Body != nil {
-				analyzeStmts(fn.Body.Body, ds)
+				analyzeStmts(&fn.Body.Body, ds)
 			}
 			return false // don't descend; analyzeStmts handled it
 		case *jsast.JsFuncExpr:
 			if fn.Body != nil {
-				analyzeStmts(fn.Body.Body, ds)
+				analyzeStmts(&fn.Body.Body, ds)
 			}
 			return false
 		case *jsast.JsArrowFunc:
 			if block, ok := fn.Body.(*jsast.JsBlock); ok && block != nil {
-				analyzeStmts(block.Body, ds)
+				analyzeStmts(&block.Body, ds)
 			}
 			return false
 		}
