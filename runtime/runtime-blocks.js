@@ -1533,6 +1533,36 @@ export function $$boundary(cursor, body, catcher, where) {
   return block;
 }
 
+// ── $$global ─────────────────────────────────────────────────────────────
+// A binding of <vela:window> or <vela:document> (task 095): a read-only
+// value of the target that is written into state after the mount (after
+// the hydration commit) and again on each of its events. The listeners
+// leave with the component.
+
+const globalBindings = {
+  innerWidth: ['resize'],
+  innerHeight: ['resize'],
+  outerWidth: ['resize'],
+  outerHeight: ['resize'],
+  devicePixelRatio: ['resize'],
+  scrollX: ['scroll'],
+  scrollY: ['scroll'],
+  online: ['online', 'offline'],
+  visibilityState: ['visibilitychange'],
+  activeElement: ['focusin', 'focusout'],
+  fullscreenElement: ['fullscreenchange'],
+  pointerLockElement: ['pointerlockchange', 'pointerlockerror'],
+};
+
+export function $$global(cursor, target, name, write) {
+  const read = name === 'online' ? () => navigator.onLine : () => target[name];
+  const sync = () => write(read());
+  for (const event of globalBindings[name]) cursor.listen(target, event, sync);
+  // Hydration compares the server values first (task 095).
+  if (cursor.hydrating) cursor.afterCommit(sync);
+  else sync();
+}
+
 // ── $$head ───────────────────────────────────────────────────────────────
 // <vela:head> (task 091). Every tag is an entry of one registry of the
 // document head. Entries with the same key ("title", "meta name=…", "meta

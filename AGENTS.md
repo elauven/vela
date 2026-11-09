@@ -245,6 +245,13 @@ each optional section, in any order:
   (`VELA-HEAD-CONTENT`). The deepest component wins a title, a meta `name` or
   `property` and the canonical link; in a Vela App it also overrides
   `r.Head()` of its own level, so keep `r.Head()` for values only Go has.
+- Listen on `window` or `document` and read their values with one
+  `<vela:window>` / `<vela:document>` at the top level of the template,
+  not with `addEventListener` in `$effect`:
+  `<vela:window @keydown={onKey} bind:innerWidth={width} />`. Bindings are
+  read-only (`innerWidth`, `innerHeight`, `scrollX`, `scrollY`, `online`, …;
+  on the document `visibilityState`, `activeElement`) into a `$state`;
+  on the server they keep the initial value.
 - Pass values that many levels need (theme, current user, services) through
   context: `setContext('key', value)` in an ancestor's script,
   `getContext('key')` in a descendant's script, with string-literal keys.
@@ -356,8 +363,9 @@ Do not generate or rely on the following in Vela applications:
   properties), `.tsx`/`.jsx` modules, or JSX.
 - Svelte 5 `$props()`, snippets, or `{@render}`.
 - `<svelte:component>` (use `<vela:component :this={…}>`), `<svelte:head>`
-  (use `<vela:head>`), `<svelte:element>`, `<svelte:self>`, `<svelte:window>`,
-  `<svelte:document>`, or `<svelte:body>`.
+  (use `<vela:head>`), `<svelte:window>` and `<svelte:document>` (use
+  `<vela:window>` and `<vela:document>`), `<svelte:element>`,
+  `<svelte:self>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
 - `{@html}`, `{@const}`, `{@debug}`, or event modifiers such as
   `@click.prevent` (call `event.preventDefault()` in the handler).

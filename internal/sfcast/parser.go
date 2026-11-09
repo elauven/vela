@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -736,24 +737,105 @@ const HeadTag = "vela:head"
 // (no space at the edges, one between two nodes). Without a head the nodes
 // are returned unchanged.
 func SplitHead(nodes []Node) (*HeadNode, []Node) {
-	index := -1
-	for i, node := range nodes {
-		if _, ok := node.(*HeadNode); ok {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
+	found, rest := splitTop(nodes, func(node Node) bool {
+		_, ok := node.(*HeadNode)
+		return ok
+	}, true)
+	if len(found) == 0 {
 		return nil, nodes
 	}
-	head := nodes[index].(*HeadNode)
-	rest := make([]Node, 0, len(nodes)-1)
-	rest = append(rest, nodes[:index]...)
-	if index > 0 && index+1 < len(nodes) && isSpaceText(nodes[index-1]) && isSpaceText(nodes[index+1]) {
-		// Two spaces around the head are one.
-		rest = append(rest, nodes[index+2:]...)
-	} else {
-		rest = append(rest, nodes[index+1:]...)
+	return found[0].(*HeadNode), rest
+}
+
+// WindowTag and DocumentTag are the tags of the elements that listen on
+// window and document and bind their read-only values (task 095).
+const (
+	WindowTag   = "vela:window"
+	DocumentTag = "vela:document"
+)
+
+// IsGlobalTag reports whether tag is <vela:window> or <vela:document>.
+func IsGlobalTag(tag string) bool { return tag == WindowTag || tag == DocumentTag }
+
+// IsGlobalElement reports whether node is a <vela:window> or a
+// <vela:document> element.
+func IsGlobalElement(node Node) bool {
+	el, ok := node.(*ElementNode)
+	return ok && IsGlobalTag(el.Tag)
+}
+
+// GlobalBinding is one read-only value a <vela:window> or <vela:document>
+// binds (task 095): the runtime reads it from the target after hydration
+// or mount and again on each of its events.
+type GlobalBinding struct {
+	Type string // the TypeScript type of the value
+}
+
+// GlobalBindings lists the bindable values per tag.
+var GlobalBindings = map[string]map[string]GlobalBinding{
+	WindowTag: {
+		"innerWidth":       {Type: "number"},
+		"innerHeight":      {Type: "number"},
+		"outerWidth":       {Type: "number"},
+		"outerHeight":      {Type: "number"},
+		"scrollX":          {Type: "number"},
+		"scrollY":          {Type: "number"},
+		"devicePixelRatio": {Type: "number"},
+		"online":           {Type: "boolean"},
+	},
+	DocumentTag: {
+		"visibilityState":    {Type: "DocumentVisibilityState"},
+		"activeElement":      {Type: "Element | null"},
+		"fullscreenElement":  {Type: "Element | null"},
+		"pointerLockElement": {Type: "Element | null"},
+	},
+}
+
+// GlobalBindingNames returns the bindable names of tag, sorted.
+func GlobalBindingNames(tag string) []string {
+	names := make([]string, 0, len(GlobalBindings[tag]))
+	for name := range GlobalBindings[tag] {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// SplitGlobals separates the top-level <vela:window> and <vela:document>
+// elements of a template from the nodes that render in place, normalising
+// the whitespace they leave like SplitHead. Without one the nodes are
+// returned unchanged.
+func SplitGlobals(nodes []Node) ([]*ElementNode, []Node) {
+	found, rest := splitTop(nodes, IsGlobalElement, false)
+	if len(found) == 0 {
+		return nil, nodes
+	}
+	out := make([]*ElementNode, len(found))
+	for i, node := range found {
+		out[i] = node.(*ElementNode)
+	}
+	return out, rest
+}
+
+// splitTop takes the nodes that match out of nodes (only the first when
+// first is set). Two spaces around a taken node are one, and the spaces at
+// the edges of the rest are dropped.
+func splitTop(nodes []Node, match func(Node) bool, first bool) ([]Node, []Node) {
+	var found []Node
+	rest := make([]Node, 0, len(nodes))
+	for i := 0; i < len(nodes); i++ {
+		node := nodes[i]
+		if !match(node) || first && len(found) > 0 {
+			rest = append(rest, node)
+			continue
+		}
+		found = append(found, node)
+		if len(rest) > 0 && isSpaceText(rest[len(rest)-1]) && i+1 < len(nodes) && isSpaceText(nodes[i+1]) {
+			i++ // Two spaces around the node are one.
+		}
+	}
+	if len(found) == 0 {
+		return nil, nodes
 	}
 	for len(rest) > 0 && isSpaceText(rest[0]) {
 		rest = rest[1:]
@@ -761,7 +843,7 @@ func SplitHead(nodes []Node) (*HeadNode, []Node) {
 	for len(rest) > 0 && isSpaceText(rest[len(rest)-1]) {
 		rest = rest[:len(rest)-1]
 	}
-	return head, rest
+	return found, rest
 }
 
 func isSpaceText(node Node) bool {

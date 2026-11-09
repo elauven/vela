@@ -543,6 +543,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ValidateTemplate(tmpl, analysis, ds)
 		ValidateTemplateForms(tmpl, sfc.Template, ds)
 		ValidateSpecialElements(tmpl, sfc.TemplateOffset, ds)
+		ValidateGlobalElements(tmpl, analysis, sfc.TemplateOffset, ds)
 		ValidateLazyTags(tmpl, lazyBindings(scriptProg, sfc.LazyComponents), sfc.TemplateOffset, ds)
 		ValidateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
 		ValidateTemplateContextCalls(tmpl, scriptProg, ds)

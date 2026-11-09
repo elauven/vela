@@ -482,7 +482,14 @@ func (s *server) completion(doc *document, off int) any {
 		items = append(items, edit(ctx.wordStart, off, "svelte:fragment", "svelte:fragment slot=\"${1:name}\">$0</svelte:fragment", KindKeyword, "several nodes in a named slot"))
 		items = append(items, edit(ctx.wordStart, off, "vela:component", "vela:component :this={${1}}>$0</vela:component>", KindKeyword, "a component chosen by a value"))
 		items = append(items, edit(ctx.wordStart, off, "vela:head", "vela:head>\n\t<title>${1}</title>$0\n</vela:head>", KindKeyword, "tags of the document head, at the top level of the template"))
+		items = append(items, edit(ctx.wordStart, off, "vela:window", "vela:window @${1:resize}={${2}} />", KindKeyword, "listeners and read-only bindings on window, at the top level of the template"))
+		items = append(items, edit(ctx.wordStart, off, "vela:document", "vela:document @${1:visibilitychange}={${2}} />", KindKeyword, "listeners and read-only bindings on document, at the top level of the template"))
 	case inAttrName:
+		if sfcast.IsGlobalTag(ctx.tag) {
+			for _, name := range sfcast.GlobalBindingNames(ctx.tag) {
+				items = append(items, edit(ctx.wordStart, off, "bind:"+name, "bind:"+name+"={${1}}", KindProperty, "read-only "+sfcast.GlobalBindings[ctx.tag][name].Type+", written into a $state after the mount"))
+			}
+		}
 		if ctx.tag == "vela:component" {
 			// The child is chosen at run time: its props are not known here.
 			items = append(items, edit(ctx.wordStart, off, ":this", ":this={${1}}", KindProperty, "the component to render: an imported component, or null, undefined or false for nothing"))

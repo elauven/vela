@@ -431,6 +431,8 @@ func BuildSSRRenderPlanWithAnalysisAndLinks(componentName string, sfc *sfcast.SF
 		}
 	}
 	head, nodes := sfcast.SplitHead(sfc.TemplateAST.Nodes)
+	// <vela:window> and <vela:document> exist only in the browser (task 095).
+	_, nodes = sfcast.SplitGlobals(nodes)
 	b.plan.Nodes = b.nodes(nodes)
 	if head != nil {
 		// After the body, so that the body's dynamic IDs do not depend on

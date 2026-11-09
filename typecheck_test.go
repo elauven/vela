@@ -110,6 +110,8 @@ func TestCheckTypes(t *testing.T) {
 		{"src/Actions.vela", "TS2345", "<div use:select|div"},
 		{"src/Actions.vela", "TS2345", "<span use:tooltip|tooltip"},
 		{"src/Actions.vela", "TS2304", "use:missing|missing"},
+		{"src/Globals.vela", "TS2339", "event.code|code"},
+		{"src/Globals.vela", "TS2322", "bind:innerWidth={width}|width"},
 	}
 	for _, ts := range []string{"typescript-5.8", "typescript"} {
 		t.Run(ts, func(t *testing.T) {

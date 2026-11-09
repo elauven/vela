@@ -884,6 +884,9 @@ func astHoleSubtreeOK(nodes []sfcast.Node) bool {
 		case *sfcast.TextNode:
 			// Any text (static or hole) is fine.
 		case *sfcast.ElementNode:
+			if sfcast.IsGlobalTag(n.Tag) {
+				return false
+			}
 			// Dynamic attributes need per-element wiring the
 			// innerHTML path cannot express.
 			for _, a := range n.Attrs {

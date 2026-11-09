@@ -823,9 +823,15 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 				case n.Tag == "svelte:head":
 					pos, end := tagRange(n.Span, n.Tag)
 					ds.Report(diag.SevError, pos, end, "VELA-SVELTE-HEAD", "Write <vela:head> at the top level of the template.", "<svelte:head> is not supported; use <vela:head>")
+				case n.Tag == "svelte:window" || n.Tag == "svelte:document":
+					pos, end := tagRange(n.Span, n.Tag)
+					vela := "vela:" + strings.TrimPrefix(n.Tag, "svelte:")
+					ds.Report(diag.SevError, pos, end, "VELA-SVELTE-WINDOW", "Write <"+vela+" @event={handler} /> at the top level of the template.", "<%s> is not supported; use <%s>", n.Tag, vela)
+				case sfcast.IsGlobalTag(n.Tag):
+					// ValidateGlobalElements checks them.
 				case strings.HasPrefix(n.Tag, sfcast.SpecialElementPrefix):
 					pos, end := tagRange(n.Span, n.Tag)
-					ds.Report(diag.SevError, pos, end, "VELA-UNKNOWN-SPECIAL-ELEMENT", "The vela: elements are <vela:component> and <vela:head>.", "<%s> is not a Vela special element", n.Tag)
+					ds.Report(diag.SevError, pos, end, "VELA-UNKNOWN-SPECIAL-ELEMENT", "The vela: elements are <vela:component>, <vela:head>, <vela:window> and <vela:document>.", "<%s> is not a Vela special element", n.Tag)
 				}
 				walk(n.Children)
 			case *sfcast.ComponentNode:
@@ -865,6 +871,83 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 		}
 	}
 	walk(nodes)
+}
+
+// ValidateGlobalElements checks <vela:window> and <vela:document> (task
+// 095): one of each at the top level of the template, no content, and only
+// @event listeners and bind: of a read-only value of the target into a
+// $state or prop name.
+func ValidateGlobalElements(nodes []sfcast.Node, analysis *analyzer.Analysis, templateOffset int, ds *diag.DiagSet) {
+	seen := map[string]bool{}
+	reactive := func(name string) bool {
+		if analysis == nil {
+			return true
+		}
+		if analysis.StateSet()[name] {
+			return true
+		}
+		for _, prop := range analysis.Props {
+			if prop != nil && prop.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	attrReport := func(attr *sfcast.Attr, code, help, format string, args ...any) {
+		ds.Report(diag.SevError, attr.Span.Start-templateOffset, attr.Span.End-templateOffset, code, help, format, args...)
+	}
+	var walk func(ns []sfcast.Node, top bool)
+	walk = func(ns []sfcast.Node, top bool) {
+		for _, node := range ns {
+			el, ok := node.(*sfcast.ElementNode)
+			if !ok || !sfcast.IsGlobalTag(el.Tag) {
+				codegen.ForEachChildList(node, func(children []sfcast.Node) { walk(children, false) })
+				continue
+			}
+			pos := el.Span.Start - templateOffset + 1
+			end := pos + len(el.Tag)
+			switch {
+			case !top:
+				ds.Report(diag.SevError, pos, end, "VELA-GLOBAL-PLACEMENT", "Move <"+el.Tag+"> to the top level of the template.", "<%s> is allowed only at the top level of a template, not inside an element, block, slot or component", el.Tag)
+			case seen[el.Tag]:
+				ds.Report(diag.SevError, pos, end, "VELA-GLOBAL-PLACEMENT", "Put all listeners and bindings into one <"+el.Tag+">.", "a component has at most one <%s>", el.Tag)
+			}
+			seen[el.Tag] = true
+			for _, child := range el.Children {
+				if text, ok := child.(*sfcast.TextNode); ok && isBlankText(text) {
+					continue
+				}
+				ds.Report(diag.SevError, pos, end, "VELA-GLOBAL-CONTENT", "Write <"+el.Tag+" … /> without content.", "<%s> takes no content", el.Tag)
+				break
+			}
+			names := sfcast.GlobalBindingNames(el.Tag)
+			for _, attr := range el.Attrs {
+				switch {
+				case attr.IsEvent:
+				case attr.IsTwoWay:
+					if _, ok := sfcast.GlobalBindings[el.Tag][attr.Name]; !ok {
+						attrReport(attr, "VELA-GLOBAL-BINDING", "Bind one of "+strings.Join(names, ", ")+".", "<%s> cannot bind %q; its read-only values are %s", el.Tag, attr.Name, strings.Join(names, ", "))
+						continue
+					}
+					if name, ok := codegen.TemplateExprIdent(attr.Expr); ok && !reactive(name) {
+						attrReport(attr, "VELA-GLOBAL-BINDING", "Declare "+name+" with $state.", "bind:%s needs a $state or prop name, and %q is neither", attr.Name, name)
+					}
+				default:
+					attrReport(attr, "VELA-GLOBAL-CONTENT", "Use @event={handler} and bind:"+names[0]+"={name}.", "<%s> takes only @event listeners and bind: of its read-only values", el.Tag)
+				}
+			}
+		}
+	}
+	walk(nodes, true)
+}
+
+func isBlankText(text *sfcast.TextNode) bool {
+	for _, part := range text.Parts {
+		if !part.Static || strings.TrimSpace(part.Value) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // sameNodes reports whether a and b are the same node list.

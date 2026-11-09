@@ -1,0 +1,11 @@
+<script lang="ts">
+  let width = $state('');
+  let visible = $state<DocumentVisibilityState>('visible');
+  let keys = $state('');
+</script>
+
+<template>
+  <vela:window @keydown={(event) => (keys += event.key)} @resize={(event) => (keys += event.code)} bind:innerWidth={width} />
+  <vela:document @visibilitychange={() => (keys += '!')} bind:visibilityState={visible} />
+  <p>{width} {visible} {keys}</p>
+</template>

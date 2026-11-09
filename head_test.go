@@ -41,7 +41,7 @@ func TestHeadDiagnostics(t *testing.T) {
 		`<template><vela:head>{#each xs as x}<meta :name={x} />{/each}</vela:head></template>`:                "{#each} is not allowed",
 		`<template><vela:head><title><b>x</b></title></vela:head></template>`:                                 "<title> in <vela:head> holds only text",
 		`<template><svelte:head><title>x</title></svelte:head></template>`:                                    "VELA-SVELTE-HEAD",
-		`<template><vela:window /></template>`:                                                                "VELA-UNKNOWN-SPECIAL-ELEMENT",
+		`<template><vela:body /></template>`:                                                                  "VELA-UNKNOWN-SPECIAL-ELEMENT",
 	} {
 		_, diags := compileDiagnostics(t, "<script>let a = $state(1); let xs = $state([]); function f() {}</script>"+src)
 		if !strings.Contains(diags, want) {

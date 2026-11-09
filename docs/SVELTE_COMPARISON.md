@@ -67,7 +67,8 @@ needed.
 | `<svelte:boundary>` with a `failed` snippet | ✓ | `{#boundary}…{:catch error, retry}…{/boundary}` (a block, since Vela has no snippets); errors are reported with a `vela:error` event instead of `onerror`; with SSR the server renders the catch branch too |
 | `<svelte:element>`, `<svelte:self>` | ✓ | — |
 | `<svelte:head>` | ✓ | `<vela:head>` at the top level of a template: title, meta, link and JSON-LD; the deepest component wins a key, also on the server |
-| `<svelte:window>`, `<svelte:document>`, `<svelte:body>` | ✓ | — |
+| `<svelte:window>`, `<svelte:document>` | ✓ | `<vela:window>` and `<vela:document>`: listeners and read-only bindings (no writable `scrollX`/`scrollY`) |
+| `<svelte:body>` | ✓ | — |
 | `use:` actions | ✓ | ✓ (`use:name={params}`, Svelte 4 semantics; no `{@attach}`) |
 | `transition:`, `in:`, `out:`, `animate:` | ✓ | ✓ from `vela/transition` and `vela/animate`; always local, no `\|global`, no `tick`-only transitions |
 
