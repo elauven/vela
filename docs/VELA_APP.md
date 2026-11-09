@@ -24,8 +24,10 @@ deploying. The rules it implements are in [APP.md](APP.md).
 compiler. Use the same version for the Go module
 `github.com/elauven/vela/app`, the npm package `@govela/app` and the
 command. Each release states the minimum compiler and runtime it needs;
-`0.5.0` needs `vela`, `@govela/runtime` and `ssr_runtime` `0.9.0` or
-later (runtime contract `ContractV7`).
+`0.6.0` needs `vela`, `@govela/runtime` and `ssr_runtime` `0.9.0` or
+later (runtime contract `ContractV7`); transitions, `use:` and
+`<vela:window>` in route components need the compiler and
+`@govela/runtime` `0.10.0`.
 
 ### With npm (recommended for projects that use Vite)
 
@@ -55,7 +57,7 @@ To pin the version in the project, add it as a tool of the module
 (Go 1.24 and later) and run it with `go tool`:
 
 ```sh
-go get -tool github.com/elauven/vela/app/cmd/vela-app@v0.5.0
+go get -tool github.com/elauven/vela/app/cmd/vela-app@v0.6.0
 go tool vela-app gen
 ```
 
@@ -67,8 +69,8 @@ Every release `app/vX.Y.Z` on
 and `SHA256SUMS`:
 
 ```sh
-curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.5.0/vela-app-linux-amd64
-curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.5.0/SHA256SUMS
+curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.6.0/vela-app-linux-amd64
+curl -LO https://github.com/elauven/vela/releases/download/app%2Fv0.6.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 install -m 755 vela-app-linux-amd64 /usr/local/bin/vela-app
 ```
@@ -104,7 +106,7 @@ site/
 
 ```sh
 go mod init example.com/site
-go get github.com/elauven/vela/app@v0.5.0 github.com/elauven/vela/ssr_runtime@v0.9.0
+go get github.com/elauven/vela/app@v0.6.0 github.com/elauven/vela/ssr_runtime@v0.10.0
 ```
 
 `vela.config.json` compiles `src` with server rendering; `ssrModule` is the
@@ -179,12 +181,12 @@ export default {
     "build": "vela-app build"
   },
   "dependencies": {
-    "@govela/app": "0.5.0",
-    "@govela/runtime": "0.9.0"
+    "@govela/app": "0.6.0",
+    "@govela/runtime": "0.10.0"
   },
   "devDependencies": {
-    "@govela/compiler": "0.9.0",
-    "@govela/unplugin": "0.9.0",
+    "@govela/compiler": "0.10.0",
+    "@govela/unplugin": "0.10.0",
     "vite": "^8.3.5"
   }
 }
