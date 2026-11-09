@@ -13,6 +13,20 @@ declare const $$retry: () => void;
 declare function $$on<K extends keyof HTMLElementEventMap>(event: K, handler: (event: HTMLElementEventMap[K]) => any): void;
 declare function $$on(event: string, handler: (event: Event) => any): void;
 
+/** The element type of a tag name, for use: (task 093). */
+type $$VelaElement<T extends string> = T extends keyof HTMLElementTagNameMap ? HTMLElementTagNameMap[T] : T extends keyof SVGElementTagNameMap ? SVGElementTagNameMap[T] : HTMLElement;
+declare function $$element<T extends string>(tag: T): $$VelaElement<T>;
+/** use:action={params}: the action takes the element and the parameters. */
+declare function $$action<E extends Element, P>(action: (node: E, params: P) => any, node: E, params: P): void;
+/** use:action without a value: the action takes no parameters. */
+declare function $$action<E extends Element>(action: (node: E, params?: undefined) => any, node: E): void;
+/** transition:, in:, out: (task 096): the transition takes the element and the parameters and returns its configuration. */
+declare function $$transition<E extends Element, P>(transition: (node: E, params: P, options: { direction: 'in' | 'out' }) => import('vela').TransitionConfig, node: E, params: P): void;
+declare function $$transition<E extends Element>(transition: (node: E, params?: undefined, options?: { direction: 'in' | 'out' }) => import('vela').TransitionConfig, node: E): void;
+/** animate: in a keyed {#each} row (task 096). */
+declare function $$animate<E extends Element, P>(animation: (node: E, positions: { from: DOMRect; to: DOMRect }, params: P) => import('vela').TransitionConfig, node: E, params: P): void;
+declare function $$animate<E extends Element>(animation: (node: E, positions: { from: DOMRect; to: DOMRect }, params?: undefined) => import('vela').TransitionConfig, node: E): void;
+
 /** The component of a value of <vela:component :this>, a Lazy one loaded. */
 type $$VelaUnlazy<C> = C extends import('vela').Lazy<infer L> ? L : C;
 type $$VelaCandidates<C> = $$VelaUnlazy<Exclude<C, null | undefined | false>>;

@@ -413,7 +413,7 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 		attrs = jsast.GenArray(jsast.GenStrLit(g.elementScope), jsast.GenStrLit(""))
 	}
 	for _, attr := range el.Attrs {
-		if attr.IsEvent || attr.IsTwoWay || attr.IsBind || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+		if attr.IsEvent || attr.IsTwoWay || attr.IsBind || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir || attr.IsAction {
 			continue
 		}
 		attrs.Elems = append(attrs.Elems, jsast.GenStrLit(attr.Name), jsast.GenStrLit(attr.Value))
@@ -425,9 +425,11 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 
 	// Listeners first; DOM writes after the children exist, so a select's
 	// value is written once its options are present.
-	var writes []jsast.JsStmt
+	var writes, actions []jsast.JsStmt
 	for _, attr := range el.Attrs {
 		switch {
+		case attr.IsAction:
+			actions = append(actions, g.blocksAction(ref, attr))
 		case attr.IsEvent:
 			g.blocksEmit(g.blocksListen(ref, attr.Name, g.blocksEventHandler(attr)))
 		case attr.IsTwoWay || attr.IsBind:
@@ -468,6 +470,36 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 		}
 	}
 	g.blocksEmit(writes...)
+	g.blocksEmit(actions...)
+}
+
+// blocksAction lowers use:name={params} (task 093) to
+// `const $$aN = $$c.action(el, name, () => params)`. The cursor starts the
+// action once the element is in the document (on hydration, after the
+// commit); p() passes changed parameters to its update.
+func (g *ASTGen) blocksAction(ref string, attr *sfcast.Attr) jsast.JsStmt {
+	var read jsast.JsExpr = jsast.GenNull()
+	if attr.Expr != nil {
+		read = blocksArrow(nil, g.templateExpr(attr.Expr))
+	}
+	switch {
+	case attr.IsTransition():
+		// transition:, in:, out: (task 096): the fragment's block plays it;
+		// the parameters are read when it starts.
+		kind := map[string]string{"transition": "both", "in": "in", "out": "out"}[attr.Directive]
+		return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "transition"), jsast.GenIdent(ref), jsast.GenStrLit(kind), g.templateExpr(attr.Action), read))
+	case attr.Directive == "animate":
+		return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "animation"), jsast.GenIdent(ref), g.templateExpr(attr.Action), read))
+	}
+	handle := g.blocks.next("$$a")
+	call := jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "action"), jsast.GenIdent(ref), g.templateExpr(attr.Action), read)
+	if attr.Expr != nil {
+		if test := g.blocksGuard(attr.Expr); test != nil {
+			g.blocksUpdate(test, jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent(handle), "p"))))
+			return jsast.GenConst(handle, call)
+		}
+	}
+	return jsast.GenExprStmt(call)
 }
 
 func (g *ASTGen) blocksListen(ref, event string, handler jsast.JsExpr) jsast.JsStmt {

@@ -52,6 +52,8 @@ export interface StartOptions {
   onMismatch?: (report: MismatchReport) => void;
   /** The default prefetch of links; data-vela-preload on a link or an ancestor overrides it. */
   preload?: 'hover' | 'viewport' | 'off';
+  /** Change the page of a navigation inside document.startViewTransition (where supported, without prefers-reduced-motion). */
+  viewTransitions?: boolean;
 }
 
 /** Hydrates the server document and installs the router. */
@@ -79,6 +81,14 @@ export const navigating: {
 
 /** Calls fn before every navigation of the router; returns a function that removes it. */
 export function beforeNavigate(fn: (navigation: BeforeNavigation) => void): () => void;
+
+/**
+ * Calls fn once a navigation has what it shows, right before the page
+ * changes. The change waits for a returned promise; a returned function
+ * (or one the promise resolves with) runs after the page changed. Returns a
+ * function that removes fn.
+ */
+export function onNavigate(fn: (navigation: Navigation) => void | (() => void) | Promise<void | (() => void)>): () => void;
 
 /** Calls fn after every navigation of the router; returns a function that removes it. */
 export function afterNavigate(fn: (navigation: Navigation) => void): () => void;

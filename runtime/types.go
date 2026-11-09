@@ -9,17 +9,22 @@ import (
 // TS-6). types/ holds them once; the files of the npm package and the
 // declarations of the language server are assembled from it:
 //
-//   - runtime.d.ts (`@govela/runtime`): core.d.ts and store.d.ts;
+//   - runtime.d.ts (`@govela/runtime`): core.d.ts, store.d.ts and
+//     transition.d.ts;
 //   - runtime-hydrate.d.ts (`@govela/runtime/hydrate`): hydrate.d.ts;
 //   - ambient.d.ts (`@govela/runtime/ambient`, in tsconfig `types`): the
-//     runes, and the modules `vela` (core, stores and lifecycle hooks) and
-//     `vela/store` that component scripts import.
+//     runes, and the modules `vela` (core, stores, transitions and
+//     lifecycle hooks), `vela/store`, `vela/transition` and `vela/animate`
+//     that component scripts import.
 
 //go:embed types/core.d.ts
 var typesCore string
 
 //go:embed types/store.d.ts
 var typesStore string
+
+//go:embed types/transition.d.ts
+var typesTransition string
 
 //go:embed types/intrinsics.d.ts
 var typesIntrinsics string
@@ -59,7 +64,7 @@ func indent(s string) string {
 // RuntimeDeclarations is runtime.d.ts of the npm package.
 func RuntimeDeclarations() string {
 	return declarationsHeader + "// Types of @govela/runtime: the component API and the stores.\n\n" +
-		body(typesCore) + "\n" + body(typesStore)
+		body(typesCore) + "\n" + body(typesStore) + "\n" + body(typesTransition)
 }
 
 // HydrateDeclarations is runtime-hydrate.d.ts of the npm package.
@@ -78,8 +83,12 @@ func AmbientDeclarations() string {
 	b.WriteString(body(typesRunes))
 	b.WriteString("\ndeclare module 'vela/store' {\n")
 	b.WriteString(indent(body(typesStore)))
+	b.WriteString("}\n\ndeclare module 'vela/transition' {\n")
+	b.WriteString(indent(body(typesTransition)))
+	b.WriteString("}\n\ndeclare module 'vela/animate' {\n")
+	b.WriteString(indent(body(typesTransition)))
 	b.WriteString("}\n\ndeclare module 'vela' {\n")
-	b.WriteString(indent(body(typesCore) + "\n" + body(typesStore) + "\n" + body(typesIntrinsics)))
+	b.WriteString(indent(body(typesCore) + "\n" + body(typesStore) + "\n" + body(typesTransition) + "\n" + body(typesIntrinsics)))
 	b.WriteString("}\n")
 	return b.String()
 }

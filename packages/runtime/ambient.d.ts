@@ -80,6 +80,116 @@ declare module 'vela/store' {
   ): Derived<T>;
 }
 
+declare module 'vela/transition' {
+  /** An easing function: progress 0..1 to eased progress. */
+  export type EasingFunction = (t: number) => number;
+
+  /** What a transition or an animation returns: css(t, u) is the inline CSS at t (0 hidden, 1 shown; u = 1 - t). */
+  export interface TransitionConfig {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+    css?: (t: number, u: number) => string;
+  }
+
+  /** A transition for transition:, in: and out:. */
+  export type Transition<E extends Element = Element, P = any> = (node: E, params: P, options: { direction: 'in' | 'out' }) => TransitionConfig;
+
+  /** An animation for animate: in a keyed {#each}. */
+  export type Animate<E extends Element = Element, P = any> = (node: E, positions: { from: DOMRect; to: DOMRect }, params: P) => TransitionConfig;
+
+  export interface FadeParams {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+  }
+
+  export interface FlyParams extends FadeParams {
+    x?: number | string;
+    y?: number | string;
+    opacity?: number;
+  }
+
+  export interface ScaleParams extends FadeParams {
+    start?: number;
+    opacity?: number;
+  }
+
+  export interface SlideParams extends FadeParams {
+    axis?: 'x' | 'y';
+  }
+
+  export interface FlipParams {
+    delay?: number;
+    duration?: number | ((distance: number) => number);
+    easing?: EasingFunction;
+  }
+
+  export function linear(t: number): number;
+  export function cubicOut(t: number): number;
+  export function cubicInOut(t: number): number;
+  export function fade(node: Element, params?: FadeParams): TransitionConfig;
+  export function fly(node: Element, params?: FlyParams): TransitionConfig;
+  export function scale(node: Element, params?: ScaleParams): TransitionConfig;
+  export function slide(node: Element, params?: SlideParams): TransitionConfig;
+  export function flip(node: Element, positions: { from: DOMRect; to: DOMRect }, params?: FlipParams): TransitionConfig;
+}
+
+declare module 'vela/animate' {
+  /** An easing function: progress 0..1 to eased progress. */
+  export type EasingFunction = (t: number) => number;
+
+  /** What a transition or an animation returns: css(t, u) is the inline CSS at t (0 hidden, 1 shown; u = 1 - t). */
+  export interface TransitionConfig {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+    css?: (t: number, u: number) => string;
+  }
+
+  /** A transition for transition:, in: and out:. */
+  export type Transition<E extends Element = Element, P = any> = (node: E, params: P, options: { direction: 'in' | 'out' }) => TransitionConfig;
+
+  /** An animation for animate: in a keyed {#each}. */
+  export type Animate<E extends Element = Element, P = any> = (node: E, positions: { from: DOMRect; to: DOMRect }, params: P) => TransitionConfig;
+
+  export interface FadeParams {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+  }
+
+  export interface FlyParams extends FadeParams {
+    x?: number | string;
+    y?: number | string;
+    opacity?: number;
+  }
+
+  export interface ScaleParams extends FadeParams {
+    start?: number;
+    opacity?: number;
+  }
+
+  export interface SlideParams extends FadeParams {
+    axis?: 'x' | 'y';
+  }
+
+  export interface FlipParams {
+    delay?: number;
+    duration?: number | ((distance: number) => number);
+    easing?: EasingFunction;
+  }
+
+  export function linear(t: number): number;
+  export function cubicOut(t: number): number;
+  export function cubicInOut(t: number): number;
+  export function fade(node: Element, params?: FadeParams): TransitionConfig;
+  export function fly(node: Element, params?: FlyParams): TransitionConfig;
+  export function scale(node: Element, params?: ScaleParams): TransitionConfig;
+  export function slide(node: Element, params?: SlideParams): TransitionConfig;
+  export function flip(node: Element, positions: { from: DOMRect; to: DOMRect }, params?: FlipParams): TransitionConfig;
+}
+
 declare module 'vela' {
   /** Props of a component: an object of named values. */
   export type Props = Record<string, any>;
@@ -182,6 +292,19 @@ declare module 'vela' {
   /** Reports whether an ancestor set a value for key. Call it while the component starts. */
   export function hasContext(key: string): boolean;
 
+  /** What an action returns: update gets new parameters, destroy runs when the element goes away. */
+  export interface ActionReturn<P = undefined> {
+    update?: (params: P) => void;
+    destroy?: () => void;
+  }
+
+  /**
+   * The function of a `use:name={params}` directive. It runs once the element
+   * is in the document (after hydration, once the page committed), never on
+   * the server.
+   */
+  export type Action<E extends Element = HTMLElement, P = undefined> = (node: E, params: P) => ActionReturn<P> | void;
+
   /** Removes a subscription. Idempotent. */
   export type Unsubscriber = () => void;
 
@@ -228,6 +351,59 @@ declare module 'vela' {
     fn: (values: StoresValues<S>) => T,
     initial?: T,
   ): Derived<T>;
+
+  /** An easing function: progress 0..1 to eased progress. */
+  export type EasingFunction = (t: number) => number;
+
+  /** What a transition or an animation returns: css(t, u) is the inline CSS at t (0 hidden, 1 shown; u = 1 - t). */
+  export interface TransitionConfig {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+    css?: (t: number, u: number) => string;
+  }
+
+  /** A transition for transition:, in: and out:. */
+  export type Transition<E extends Element = Element, P = any> = (node: E, params: P, options: { direction: 'in' | 'out' }) => TransitionConfig;
+
+  /** An animation for animate: in a keyed {#each}. */
+  export type Animate<E extends Element = Element, P = any> = (node: E, positions: { from: DOMRect; to: DOMRect }, params: P) => TransitionConfig;
+
+  export interface FadeParams {
+    delay?: number;
+    duration?: number;
+    easing?: EasingFunction;
+  }
+
+  export interface FlyParams extends FadeParams {
+    x?: number | string;
+    y?: number | string;
+    opacity?: number;
+  }
+
+  export interface ScaleParams extends FadeParams {
+    start?: number;
+    opacity?: number;
+  }
+
+  export interface SlideParams extends FadeParams {
+    axis?: 'x' | 'y';
+  }
+
+  export interface FlipParams {
+    delay?: number;
+    duration?: number | ((distance: number) => number);
+    easing?: EasingFunction;
+  }
+
+  export function linear(t: number): number;
+  export function cubicOut(t: number): number;
+  export function cubicInOut(t: number): number;
+  export function fade(node: Element, params?: FadeParams): TransitionConfig;
+  export function fly(node: Element, params?: FlyParams): TransitionConfig;
+  export function scale(node: Element, params?: ScaleParams): TransitionConfig;
+  export function slide(node: Element, params?: SlideParams): TransitionConfig;
+  export function flip(node: Element, positions: { from: DOMRect; to: DOMRect }, params?: FlipParams): TransitionConfig;
 
   /**
    * Runs fn after the component is mounted. A function it returns runs when

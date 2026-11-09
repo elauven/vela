@@ -7,6 +7,7 @@ const stepKeys = [
   'seedStorage', 'assertText', 'assertHTML', 'assertValue', 'assertStorage',
   'assertCount', 'assertFocused', 'assertStyle', 'assertGlobal', 'focus', 'click', 'dblclick',
   'submit', 'input', 'change', 'blur', 'keydown', 'remount', 'clickAndDestroy', 'tick',
+  'finishAnimations', 'reducedMotion', 'wait',
 ];
 
 function kindOf(step) {
@@ -145,6 +146,19 @@ export async function replayFixtureSteps(steps, adapter) {
           await adapter.settle();
           break;
         case 'tick':
+          await adapter.settle();
+          break;
+        // Transitions (task 096): finish every running animation, switch
+        // prefers-reduced-motion, or wait in real time.
+        case 'finishAnimations':
+          await adapter.finishAnimations();
+          await adapter.settle();
+          break;
+        case 'reducedMotion':
+          await adapter.reducedMotion(!!step.reducedMotion);
+          break;
+        case 'wait':
+          await new Promise((resolve) => setTimeout(resolve, step.wait));
           await adapter.settle();
           break;
         default:

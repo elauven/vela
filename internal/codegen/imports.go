@@ -8,6 +8,7 @@ package codegen
 //   3. Emit the rewritten imports into the generated JS output
 
 import (
+	"github.com/elauven/vela/internal/analyzer"
 	"github.com/elauven/vela/internal/jsast"
 
 	"github.com/elauven/vela/runtime"
@@ -411,7 +412,7 @@ func IsPackageSpecifier(spec string) bool {
 	if spec == "" || strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.HasPrefix(spec, "#") || strings.Contains(spec, ":") {
 		return false
 	}
-	return spec != "vela" && spec != "vela/store"
+	return !analyzer.IsVelaModule(spec)
 }
 
 // RewriteJSModuleSpecifiers prepares a copied JavaScript module of a project:
@@ -439,7 +440,7 @@ func RewriteJSModuleSpecifiersWith(src, runtimeSpecifier string, sourceComponent
 			replacement = strings.TrimSuffix(spec.Value, ".vela") + ".js"
 		case !sourceComponentImports && IsTypeScriptModuleSpecifier(spec.Value):
 			replacement = TypeScriptModuleOutput(spec.Value)
-		case spec.Value == "vela" || spec.Value == "vela/store":
+		case analyzer.IsVelaModule(spec.Value):
 			replacement = runtimeSpecifier
 		default:
 			continue

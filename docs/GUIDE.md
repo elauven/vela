@@ -344,6 +344,101 @@ Shorthand: `class:active` (no value) is equivalent to
 Hyphenated CSS names map to camelCase automatically — `style:font-size`
 sets `.style.fontSize`. The same no-value shorthand applies.
 
+### `use:` — actions
+
+`use:name={params}` attaches a DOM library (a tooltip, a focus trap, drag
+and drop) to an element in one line. The action is a function of the
+element and the parameters; it may return `update` and `destroy`:
+
+```
+<script>
+  import { createTooltip } from './tooltip.js';
+
+  let label = $state('Save the draft');
+
+  function tooltip(node, text) {
+    const tip = createTooltip(node, text);
+    return {
+      update(next) { tip.setText(next); },
+      destroy() { tip.remove(); },
+    };
+  }
+</script>
+<template>
+  <button use:tooltip={label}>Save</button>
+  <div use:trapFocus>…</div>
+</template>
+```
+
+- The action runs once the element is in the document; after
+  hydration it runs when the page has committed. It never runs on the
+  server, which writes nothing for the directive.
+- `update(params)` runs when a value the parameters read changes;
+  `destroy()` runs when the element goes away: a branch or row change,
+  `{#key}`, or the component's destruction.
+- `use:name` without a value calls `name(node)`. The name is a variable
+  or a member path (`use:lib.tooltip`); it is read once, when the action
+  starts.
+- An action that throws while it starts fails the enclosing
+  `{#boundary}`.
+- `use:` works on elements, not on components (`VELA-ACTION-TARGET`):
+  pass the action to the child as a prop and use it on an element there.
+- In TypeScript, type the function with `Action<Element, Params>` from
+  `vela` (`import type { Action } from 'vela'`); `vela check --types`
+  checks the element and the parameters.
+
+### `transition:`, `in:`, `out:` and `animate:` — transitions
+
+A transition animates an element when its block adds or removes it. The
+functions come from `vela/transition`:
+
+```
+<script>
+  import { fade, fly, slide, scale } from 'vela/transition';
+  import { flip } from 'vela/animate';
+
+  let open = $state(false);
+  let todos = $state([]);
+</script>
+<template>
+  {#if open}
+    <div class="panel" transition:slide>…</div>
+    <p in:fly={{ y: 20, duration: 200 }} out:fade>Saved</p>
+  {/if}
+  <ul>
+    {#each todos as todo (todo.id)}
+      <li animate:flip transition:scale={{ start: 0.9 }}>{todo.title}</li>
+    {/each}
+  </ul>
+</template>
+```
+
+- `transition:fn` plays when the element enters and leaves; `in:fn` only
+  when it enters, `out:fn` only when it leaves. A block waits for the
+  outros before it removes the old branch, row or value; the new one is
+  in place at once, so both can be visible for a moment.
+- `animate:fn` goes on the only element of a keyed `{#each}` row
+  (`VELA-ANIMATE-PLACEMENT`) and animates the rows that move;
+  `flip` (from `vela/animate` or `vela/transition`) slides them.
+- Transitions are local: they play when the `{#if}`, `{#each}`, `{#key}`
+  or `{#await}` that directly holds the element changes, not when an outer
+  block removes everything. The root elements of a component belong to
+  the block the component is in, so `{#if open}<Modal />{/if}` plays the
+  transitions of `<Modal>`'s root elements.
+- Nothing plays on the first render or while a page hydrates; with
+  `prefers-reduced-motion: reduce`, or in a browser without the Web
+  Animations API, elements appear and go at once.
+- `fade`, `fly` (`x`, `y`, `opacity`), `slide` (`axis`), `scale`
+  (`start`, `opacity`) and `flip` take `delay`, `duration` and `easing`
+  (`linear`, `cubicOut`, `cubicInOut` from the same module). Your own
+  transition is `(node, params, { direction }) => ({ delay, duration,
+  easing, css: (t, u) => 'opacity: ' + t })`, with `t` from 0 (hidden) to
+  1 (shown); type it with `Transition<E, P>` (and `Animate<E, P>`) from
+  `vela/transition`.
+- An interrupted transition continues from where the element is, and a
+  block or component that goes away mid-outro takes the leaving nodes
+  with it. Modifiers such as `|global` are not supported.
+
 ---
 
 ## 7. Block constructs
@@ -854,6 +949,9 @@ Scoping is identical either way.
 | `bind:this={x}` | element reference |
 | `class:name={cond}` | conditional class |
 | `style:prop={expr}` | inline style property |
+| `use:action={params}` | action: `action(node, params)` with `update`/`destroy` |
+| `transition:fade` `in:fly={{ y: 20 }}` `out:fade` | enter/leave transitions (`vela/transition`) |
+| `animate:flip` | move animation of a keyed `{#each}` row |
 | `{#if}` `{:else if}` `{:else}` `{/if}` | conditional |
 | `{#each list as item, i}` `{/each}` | list |
 | `{#key expr}` `{/key}` | keyed re-creation |

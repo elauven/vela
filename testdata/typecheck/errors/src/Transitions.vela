@@ -1,0 +1,14 @@
+<script lang="ts">
+  import { fade } from 'vela/transition';
+  import { flip } from 'vela/animate';
+  let show = $state(true);
+  let items = $state([1, 2]);
+  function wrong(node: HTMLElement) {
+    return node.localName.length;
+  }
+</script>
+
+<template>
+  {#if show}<p transition:fade={{ duration: 'slow' }}>a</p><b in:wrong>b</b>{/if}
+  {#each items as item (item)}<li animate:flip={{ delay: 'soon' }}>{item}</li>{/each}
+</template>

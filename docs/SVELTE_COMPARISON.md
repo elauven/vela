@@ -14,8 +14,7 @@ two differ. Svelte 5 reference: 5.x (2025). Vela status:
 - **Different scope:** Vela renders on the server in **Go** (Svelte renders in
   Node), and it is a compiler only: no SvelteKit-style framework, router or
   bundler.
-- **Not in Vela:** snippets, `{@html}`, actions, transitions, dynamic
-  components and most `<svelte:*>` elements.
+- **Not in Vela:** snippets, `{@html}`, and most `<svelte:*>` elements.
 
 ## Reactivity
 
@@ -69,8 +68,8 @@ needed.
 | `<svelte:element>`, `<svelte:self>` | ✓ | — |
 | `<svelte:head>` | ✓ | `<vela:head>` at the top level of a template: title, meta, link and JSON-LD; the deepest component wins a key, also on the server |
 | `<svelte:window>`, `<svelte:document>`, `<svelte:body>` | ✓ | — |
-| `use:` actions | ✓ | — (use `bind:this` with `onMount` or `$effect`) |
-| `transition:`, `in:`, `out:`, `animate:` | ✓ | — |
+| `use:` actions | ✓ | ✓ (`use:name={params}`, Svelte 4 semantics; no `{@attach}`) |
+| `transition:`, `in:`, `out:`, `animate:` | ✓ | ✓ from `vela/transition` and `vela/animate`; always local, no `\|global`, no `tick`-only transitions |
 
 ## Tooling and server rendering
 

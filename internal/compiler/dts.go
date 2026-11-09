@@ -218,7 +218,7 @@ func objectOf(names []string, value string) string {
 // declarations are beside them), and the modules the compiler provides
 // become the runtime package, which declares the same names.
 func declarationSpecifier(spec string) string {
-	if spec == "vela" || spec == "vela/store" {
+	if analyzer.IsVelaModule(spec) {
 		return runtime.PackageName
 	}
 	return codegen.RewriteImportPath(spec)

@@ -1,0 +1,19 @@
+<script lang="ts">
+  import type { Action } from 'vela';
+
+  const tooltip: Action<HTMLElement, string> = (node, text) => ({
+    update(next) {
+      node.title = next + text;
+    },
+  });
+  const select: Action<HTMLInputElement> = (node) => {
+    node.select();
+  };
+</script>
+
+<template>
+  <p use:tooltip={42}>a</p>
+  <div use:select>b</div>
+  <span use:tooltip>c</span>
+  <i use:missing>d</i>
+</template>

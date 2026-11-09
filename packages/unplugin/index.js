@@ -15,7 +15,7 @@ const runtimeEntries = [runtimePackage, `${runtimePackage}/blocks`, `${runtimePa
 const styleQuery = '?vela&type=style&lang.css';
 const styleId = /\.vela\?vela&type=style&lang\.css$/;
 const componentId = /\.vela$/;
-const runtimeAlias = /^vela(\/store)?$/;
+const runtimeAlias = /^vela(\/(store|transition|animate))?$/;
 
 // Bundlers that process an imported .css module without further setup;
 // the others get the CSS injected by the component.
@@ -79,15 +79,15 @@ export const unplugin = createUnplugin((options = {}, meta) => {
     enforce: 'pre',
 
     resolveId: {
-      filter: { id: /(^vela(\/store)?$|\?vela&type=style)/ },
+      filter: { id: /(^vela(\/(store|transition|animate))?$|\?vela&type=style)/ },
       async handler(id, importer) {
         if (styleId.test(id)) {
           const base = importer ? path.dirname(stripQuery(importer)) : cwd;
           return path.resolve(base, stripQuery(id)) + styleQuery;
         }
         if (!runtimeAlias.test(id)) return null;
-        // `vela` and `vela/store` in the application's own modules are the
-        // runtime package, as in a build (Vite and esbuild use an alias).
+        // `vela`, `vela/store`, `vela/transition` and `vela/animate` in the
+        // application's own modules are the runtime package, as in a build (Vite and esbuild use an alias).
         if (typeof this.resolve === 'function') {
           return this.resolve(runtimePackage, importer, { skipSelf: true });
         }
@@ -150,7 +150,7 @@ export const unplugin = createUnplugin((options = {}, meta) => {
       onResolveFilter: /\?vela&type=style/,
       onLoadFilter: /\.vela(\?|$)/,
       config(buildOptions) {
-        buildOptions.alias = { vela: runtimePackage, 'vela/store': runtimePackage, ...buildOptions.alias };
+        buildOptions.alias = { vela: runtimePackage, 'vela/store': runtimePackage, 'vela/transition': runtimePackage, 'vela/animate': runtimePackage, ...buildOptions.alias };
       },
     },
   };

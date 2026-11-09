@@ -752,3 +752,110 @@ export function $$eachRowsForMutations(mutations, keyField) {
   }
   return [...rows];
 }
+
+// ─────────────────────────────────────────────
+//  Transitions and animations (task 096)
+//
+//  `vela/transition` (also `vela/animate` and `vela`): functions for
+//  transition:, in:, out: and animate:. A transition is
+//  (node, params, { direction }) => { delay, duration, easing, css }, an
+//  animation (node, { from, to }, params) => the same; css(t, u) returns
+//  the inline CSS at t (0 hidden, 1 shown; u = 1 - t). The runtime plays
+//  them with the Web Animations API.
+// ─────────────────────────────────────────────
+
+export function linear(t) {
+  return t;
+}
+
+export function cubicOut(t) {
+  const f = t - 1;
+  return f * f * f + 1;
+}
+
+export function cubicInOut(t) {
+  return t < 0.5 ? 4 * t * t * t : 0.5 * Math.pow(2 * t - 2, 3) + 1;
+}
+
+function computedStyle(node) {
+  return getComputedStyle(node);
+}
+
+function baseTransform(style) {
+  return style.transform === 'none' || !style.transform ? '' : style.transform + ' ';
+}
+
+export function fade(node, { delay = 0, duration = 400, easing = linear } = {}) {
+  const opacity = +computedStyle(node).opacity || 1;
+  return { delay, duration, easing, css: (t) => `opacity: ${t * opacity}` };
+}
+
+export function fly(node, { delay = 0, duration = 400, easing = cubicOut, x = 0, y = 0, opacity = 0 } = {}) {
+  const style = computedStyle(node);
+  const target = +style.opacity || 1;
+  const transform = baseTransform(style);
+  const delta = target * (1 - opacity);
+  const length = (value) => (typeof value === 'number' ? value + 'px' : value);
+  return {
+    delay,
+    duration,
+    easing,
+    css: (t, u) => `transform: ${transform}translate(calc(${length(x)} * ${u}), calc(${length(y)} * ${u})); opacity: ${target - delta * u}`,
+  };
+}
+
+export function scale(node, { delay = 0, duration = 400, easing = cubicOut, start = 0, opacity = 0 } = {}) {
+  const style = computedStyle(node);
+  const target = +style.opacity || 1;
+  const transform = baseTransform(style);
+  const scaleDelta = 1 - start;
+  const opacityDelta = target * (1 - opacity);
+  return {
+    delay,
+    duration,
+    easing,
+    css: (t, u) => `transform: ${transform}scale(${1 - scaleDelta * u}); opacity: ${target - opacityDelta * u}`,
+  };
+}
+
+export function slide(node, { delay = 0, duration = 400, easing = cubicOut, axis = 'y' } = {}) {
+  const style = computedStyle(node);
+  const opacity = +style.opacity || 1;
+  const vertical = axis === 'y';
+  const size = vertical ? 'height' : 'width';
+  const sides = vertical ? ['top', 'bottom'] : ['left', 'right'];
+  const measured = parseFloat(style[size]) || 0;
+  const parts = [];
+  for (const side of sides) {
+    parts.push([`padding-${side}`, parseFloat(style[`padding${side[0].toUpperCase()}${side.slice(1)}`]) || 0]);
+    parts.push([`margin-${side}`, parseFloat(style[`margin${side[0].toUpperCase()}${side.slice(1)}`]) || 0]);
+    parts.push([`border-${side}-width`, parseFloat(style[`border${side[0].toUpperCase()}${side.slice(1)}Width`]) || 0]);
+  }
+  return {
+    delay,
+    duration,
+    easing,
+    css: (t) =>
+      `overflow: hidden; opacity: ${Math.min(t * 20, 1) * opacity}; ${size}: ${t * measured}px; ` +
+      parts.map(([name, value]) => `${name}: ${t * value}px`).join('; '),
+  };
+}
+
+export function flip(node, { from, to }, { delay = 0, duration = (distance) => Math.sqrt(distance) * 120, easing = cubicOut } = {}) {
+  const style = computedStyle(node);
+  const transform = baseTransform(style);
+  const [originX, originY] = (style.transformOrigin || '0 0').split(' ').map(parseFloat);
+  const ox = originX || 0;
+  const oy = originY || 0;
+  const scaleX = to.width ? from.width / to.width : 1;
+  const scaleY = to.height ? from.height / to.height : 1;
+  const dx = from.left + ox * scaleX - (to.left + ox);
+  const dy = from.top + oy * scaleY - (to.top + oy);
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return {
+    delay,
+    duration: typeof duration === 'function' ? duration(distance) : duration,
+    easing,
+    css: (t, u) => `transform: ${transform}translate(${u * dx}px, ${u * dy}px) scale(${t + u * scaleX}, ${t + u * scaleY})`,
+  };
+}

@@ -155,7 +155,7 @@ func AnalyzeScriptAST(script *sfcast.ScriptAST) *Analysis {
 			// intrinsic gets recorded — keyed by the local
 			// binding so a later `init(() => …)` (where `init`
 			// aliased `onMount`) still resolves to the intrinsic.
-			if s.Source == "vela" || s.Source == "vela/store" {
+			if IsVelaModule(s.Source) {
 				for _, spec := range s.Specifiers {
 					if VelaCompilerIntrinsics[spec.Imported] {
 						if a.IntrinsicAliases == nil {
@@ -1006,4 +1006,14 @@ func (a *Analysis) isStateName(name string) bool {
 var VelaCompilerIntrinsics = map[string]bool{
 	"onMount":   true,
 	"onDestroy": true,
+}
+
+// IsVelaModule reports a module the compiler provides from the runtime:
+// vela, vela/store, and vela/transition and vela/animate (task 096).
+func IsVelaModule(spec string) bool {
+	switch spec {
+	case "vela", "vela/store", "vela/transition", "vela/animate":
+		return true
+	}
+	return false
 }

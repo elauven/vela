@@ -98,6 +98,14 @@ async function check(browser, url, c, files) {
 // each returns nothing or throws. They use the links of the example where
 // it has them and add a link to the body otherwise.
 const scenarios = [
+  ['a navigation runs onNavigate and changes the page in a view transition (task 096)', async (t) => {
+    await t.open('/users/1');
+    t.equal(await t.page.evaluate(() => typeof document.startViewTransition), 'function', 'Chromium has view transitions');
+    await t.follow('aside a[href="/users/2"]');
+    t.equal(await t.text('article h1'), 'Grace', 'page');
+    t.equal(await t.page.evaluate(() => window.__viewTransitions), 1, 'view transitions');
+    t.equal(await t.page.evaluate(() => (window.__onNavigate || []).join('|')), 'Ada · Users -> Grace · Users', 'onNavigate before and after the change');
+  }],
   ['a navigation between users keeps the users layout', async (t) => {
     await t.open('/users/1');
     await t.page.fill('.filter', 'a');
@@ -410,6 +418,15 @@ async function runScenarios(browser, url, restart) {
     });
     await page.addInitScript(() => {
       document.addEventListener('vela:hydrated', () => { window.__hydrated = true; });
+      // Counts the view transitions the router starts (task 096).
+      const start = Document.prototype.startViewTransition;
+      if (start) {
+        window.__viewTransitions = 0;
+        Document.prototype.startViewTransition = function (...args) {
+          window.__viewTransitions++;
+          return start.apply(this, args);
+        };
+      }
     });
     const t = {
       page,

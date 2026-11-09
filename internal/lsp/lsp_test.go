@@ -439,7 +439,7 @@ func TestCompletion(t *testing.T) {
 	check("tag name", items, []string{"Card", "svelte:fragment", "vela:component", "vela:head"}, nil)
 
 	items, _ = complete(3, "<p>{count}</p>", "<p |>{count}</p>")
-	check("element attributes", items, []string{"@click", ":", "bind:value", "class:", "style:"}, []string{":title"})
+	check("element attributes", items, []string{"@click", ":", "bind:value", "class:", "style:", "use:", "transition:", "in:", "out:", "animate:"}, []string{":title"})
 
 	items, edited := complete(4, "<p>{count}</p>", "<p>{#e|}</p>")
 	check("block", items, []string{"#each", "#if", "/each"}, nil)

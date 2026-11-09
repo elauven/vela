@@ -1460,3 +1460,242 @@ func TestRuntimeNestingMatrix_HeadInEach(t *testing.T) {
 		{"assertCount": `head meta[name="description"]`, "equals": 0},
 	})
 }
+
+// ── Actions (task 093) ───────────────────────────────────────────
+
+// actionMatrixScript defines tip, which logs start (with whether the node
+// is in the document), update and destroy to globalThis.__log.
+const actionMatrixScript = `
+  function tip(node, text) {
+    const log = (entry) => { globalThis.__log = (globalThis.__log ? globalThis.__log + ' ' : '') + entry; };
+    log('start:' + text + ':' + node.isConnected);
+    return { update(next) { log('update:' + next); }, destroy() { log('destroy:' + text); } };
+  }
+`
+
+// action-in-key — a {#key} change destroys the action with its subtree
+// and starts a new one on the new element.
+func TestRuntimeNestingMatrix_ActionInKey(t *testing.T) {
+	src := `<script>` + actionMatrixScript + `
+  let v = $state(0);
+</script>
+<template><div>
+  <button @click={() => v++}>bump</button>
+  {#key v}<p use:tip={v}>{v}</p>{/key}
+</div></template>`
+	assertRuntime(t, "ActionInKey", src, []rtStep{
+		{"assertGlobal": "__log", "equals": "start:0:true"},
+		{"click": "button"},
+		{"assertGlobal": "__log", "equals": "start:0:true destroy:0 start:1:true"},
+	})
+}
+
+// action-in-await — the action of a {:then} branch starts once the
+// branch is mounted after the promise settles; a new promise remounts the
+// branch, so the action is destroyed and started again.
+func TestRuntimeNestingMatrix_ActionInAwait(t *testing.T) {
+	src := `<script>` + actionMatrixScript + `
+  let p = $state(Promise.resolve('r'));
+</script>
+<template><div>
+  <button @click={() => p = Promise.resolve('s')}>next</button>
+  {#await p}
+    <i>wait</i>
+  {:then v}
+    <p use:tip={v}>{v}</p>
+  {/await}
+</div></template>`
+	assertRuntime(t, "ActionInAwait", src, []rtStep{
+		{"assertGlobal": "__log", "equals": "start:r:true"},
+		{"click": "button"},
+		{"tick": true},
+		{"assertText": "p", "equals": "s"},
+		{"assertGlobal": "__log", "equals": "start:r:true destroy:r start:s:true"},
+	})
+}
+
+// action-in-each (unkeyed) — a reused row passes its new item to update.
+func TestRuntimeNestingMatrix_ActionInUnkeyedEach(t *testing.T) {
+	src := `<script>` + actionMatrixScript + `
+  let items = $state(['a', 'b']);
+</script>
+<template><div>
+  <button @click={() => items = ['c']}>set</button>
+  {#each items as item}<p use:tip={item}>{item}</p>{/each}
+</div></template>`
+	assertRuntime(t, "ActionInUnkeyedEach", src, []rtStep{
+		{"assertGlobal": "__log", "equals": "start:a:true start:b:true"},
+		{"click": "button"},
+		{"assertGlobal": "__log", "equals": "start:a:true start:b:true update:c destroy:b"},
+	})
+}
+
+// action-in-slot — slot content with an action starts inside the child
+// and is destroyed with the child.
+func TestRuntimeNestingMatrix_ActionInSlot(t *testing.T) {
+	box := `<template><section><slot /></section></template>`
+	parent := `<script>` + actionMatrixScript + `
+  import { Box } from './Box.vela';
+  let show = $state(true);
+</script>
+<template><div>
+  <button @click={() => show = !show}>t</button>
+  {#if show}<Box><p use:tip={'slot'}>s</p></Box>{/if}
+</div></template>`
+	assertRuntimeSet(t, "ActionSlot", map[string]string{"ActionSlot": parent, "Box": box}, []rtStep{
+		{"assertGlobal": "__log", "equals": "start:slot:true"},
+		{"click": "button"},
+		{"assertGlobal": "__log", "equals": "start:slot:true destroy:slot"},
+	})
+}
+
+// action-in-boundary — an action that throws while it starts fails the
+// enclosing {#boundary}, which shows its catch branch.
+func TestRuntimeNestingMatrix_ActionInBoundary(t *testing.T) {
+	src := `<script>
+  function broken() {
+    throw new Error('no tooltip');
+  }
+</script>
+<template><div>
+  {#boundary}
+    <p use:broken>body</p>
+  {:catch error}
+    <b>{error.message}</b>
+  {/boundary}
+</div></template>`
+	assertRuntime(t, "ActionInBoundary", src, []rtStep{
+		{"assertText": "b", "equals": "no tooltip"},
+		{"assertCount": "p", "equals": 0},
+	})
+}
+
+// action-in-if, interrupted — a branch that is removed within the same
+// update never starts its action and leaves no nodes behind.
+func TestRuntimeNestingMatrix_ActionBranchRemovedBeforeStart(t *testing.T) {
+	src := `<script>` + actionMatrixScript + `
+  let show = $state(false);
+  function flicker() {
+    globalThis.__log = 'click';
+    show = true;
+    show = false;
+  }
+</script>
+<template><div>
+  <button @click={flicker}>f</button>
+  {#if show}<p use:tip={'x'}>x</p>{/if}
+</div></template>`
+	assertRuntime(t, "ActionInterrupted", src, []rtStep{
+		{"click": "button"},
+		{"assertCount": "p", "equals": 0},
+		{"assertGlobal": "__log", "equals": "click"},
+	})
+}
+
+// ── Outros (task 096) ────────────────────────────────────────────
+// An outro holds the leaving fragment until its animation finishes
+// (finishAnimations), and the outer construct taking the subtree away
+// mid-outro leaves no node behind.
+
+const outroScript = `
+  import { fade } from 'vela/transition';
+  let outer = $state(true);
+  let inner = $state(true);
+  let token = $state(1);
+  let items = $state(['a', 'b']);
+  let promise = $state(Promise.resolve('one'));
+`
+
+func outroButtons(extra string) string {
+	return `<button class="o" @click={() => outer = !outer}>o</button>
+  <button class="i" @click={() => inner = !inner}>i</button>
+  <button class="k" @click={() => token++}>k</button>
+  <button class="d" @click={() => items = items.slice(1)}>d</button>
+  <button class="p" @click={() => promise = Promise.resolve('two')}>p</button>` + extra
+}
+
+func TestRuntimeNestingMatrix_OutroInIf(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}<section>{#if inner}<span class="x" transition:fade>x</span>{/if}</section>{/if}
+</div></template>`
+	assertRuntime(t, "OutroInIf", src, []rtStep{
+		{"click": "button.i"},
+		{"assertCount": "span.x", "equals": 1},
+		// The outer block removes the section while the inner outro runs.
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertCount": "section", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"click": "button.i"},
+		{"assertCount": "span.x", "equals": 1},
+		{"finishAnimations": true},
+		{"assertCount": "span.x", "equals": 1},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInEach(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}<ul>{#each items as item (item)}<li transition:fade>{item}</li>{/each}</ul>{/if}
+</div></template>`
+	assertRuntime(t, "OutroInEach", src, []rtStep{
+		{"click": "button.d"},
+		{"assertCount": "li", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "ul", "equals": "b"},
+		{"click": "button.d"},
+		{"assertCount": "li", "equals": 1},
+		{"click": "button.o"},
+		{"assertCount": "li", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInKey(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}{#key token}<span class="x" transition:fade>{token}</span>{/key}{/if}
+</div></template>`
+	assertRuntime(t, "OutroInKey", src, []rtStep{
+		{"click": "button.k"},
+		{"assertCount": "span.x", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "span.x", "equals": "2"},
+		{"click": "button.k"},
+		{"assertCount": "span.x", "equals": 2},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}
+
+func TestRuntimeNestingMatrix_OutroInAwait(t *testing.T) {
+	src := `<script>` + outroScript + `</script>
+<template><div>
+  ` + outroButtons("") + `
+  {#if outer}{#await promise}<i>wait</i>{:then value}<span class="x" transition:fade>{value}</span>{/await}{/if}
+</div></template>`
+	assertRuntime(t, "OutroInAwait", src, []rtStep{
+		{"tick": true},
+		{"assertText": "span.x", "equals": "one"},
+		{"finishAnimations": true},
+		// A new promise: the old value leaves while the new one comes.
+		{"click": "button.p"},
+		{"tick": true},
+		{"assertCount": "span.x", "equals": 2},
+		{"finishAnimations": true},
+		{"assertText": "span.x", "equals": "two"},
+		{"click": "button.p"},
+		{"tick": true},
+		{"click": "button.o"},
+		{"assertCount": "span.x", "equals": 0},
+		{"assertCount": "i", "equals": 0},
+		{"assertGlobal": "__velaRunning", "equals": 0},
+	})
+}

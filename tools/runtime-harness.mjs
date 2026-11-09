@@ -26,6 +26,13 @@
 //   { "keydown": "<sel>", "key": "Enter" }              dispatch keyboard event
 //   { "clickAndDestroy": "<sel>" }                 click and destroy before queued work flushes
 //   { "tick": true }                                 await the microtask queue
+//   { "finishAnimations": true }                     finish every running animation
+//   { "reducedMotion": true }                        prefers-reduced-motion: reduce
+//   { "wait": ms }                                   wait in real time
+//
+// jsdom has no Web Animations: element.animate is a stub whose animations
+// run until finishAnimations (or cancel). globalThis.__velaAnimations
+// counts started animations, __velaRunning the running ones.
 //
 // The harness registers a minimal $$defer on globalThis so reactive
 // updates flush synchronously inside a step (real runtime.js batches
@@ -87,6 +94,37 @@ globalThis.HTMLElement = window.HTMLElement;
 globalThis.localStorage = window.localStorage;
 globalThis.requestAnimationFrame =
   window.requestAnimationFrame ?? ((fn) => setTimeout(fn, 0));
+globalThis.getComputedStyle = window.getComputedStyle.bind(window);
+
+let reducedMotion = false;
+globalThis.matchMedia = (query) => ({ matches: reducedMotion && query.includes('prefers-reduced-motion: reduce'), media: query });
+const runningAnimations = new Set();
+globalThis.__velaAnimations = 0;
+globalThis.__velaRunning = 0;
+window.Element.prototype.animate = function animate(frames, options) {
+  let settle;
+  const finished = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+  const animation = {
+    finished,
+    // Every stub animation is half way, for interrupted transitions.
+    currentTime: (options && options.delay || 0) + (options && options.duration || 0) / 2,
+    frames,
+    options,
+    node: this,
+    cancel() { end(false); },
+    finish() { end(true); },
+  };
+  function end(ok) {
+    if (!runningAnimations.delete(animation)) return;
+    globalThis.__velaRunning = runningAnimations.size;
+    if (ok) settle.resolve(animation);
+    else settle.reject(new window.DOMException('cancelled', 'AbortError'));
+  }
+  runningAnimations.add(animation);
+  globalThis.__velaAnimations++;
+  globalThis.__velaRunning = runningAnimations.size;
+  return animation;
+};
 
 // Minimal $$defer: run the callback immediately.  The real runtime
 // batches into a microtask; for test determinism the harness runs
@@ -199,6 +237,10 @@ const adapter = {
     if (instance && typeof instance.destroy === 'function') instance.destroy();
   },
   settle: flushMicrotasks,
+  finishAnimations: () => {
+    for (const animation of [...runningAnimations]) animation.finish();
+  },
+  reducedMotion: (on) => { reducedMotion = on; },
 };
 
 failures = await replayFixtureSteps(steps, adapter);
