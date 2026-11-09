@@ -85,6 +85,7 @@ full keyed reconciler.
 | Slot fragments | **Stable** | `<svelte:fragment slot="actions">...</svelte:fragment>` | Allows several nodes without a wrapper element. |
 | Class directives | **Stable** | `class:active={open}`, `class:active` | Preserves static classes; without static classes the attribute appears only while a class is on. |
 | Style directives | **Stable** | `style:color={theme}`, `style:--accent={color}` | Supports hyphenated names and CSS custom properties. |
+| Actions | **Experimental** | `use:tooltip={label}`, `use:trapFocus`, `use:lib.tooltip={opts}` | `action(node, params)` runs once the element is in the document (after the hydration commit when hydrating) and may return `{ update(params), destroy() }`; `update` runs when the parameters' inputs change, `destroy` when the element goes away. Never runs or is translated on the server, which writes nothing for it; a component with an action is not a static root. An action that throws while it starts fails the enclosing `{#boundary}`. Elements only (`VELA-ACTION-TARGET` on a component); types: `Action<E, P>` from `vela`, checked by `vela check --types`. No `{@attach}`. |
 
 ## CSS, compiler, and diagnostics
 
@@ -139,7 +140,6 @@ Overview and usage: [SSR.md](SSR.md). Normative rules:
 | --- | --- | --- |
 | Dev server / HMR | **Planned** | Watch mode recompiles only. |
 | Snippets / render props | **Unsupported** | Use current default/named slots instead. |
-| Actions | **Unsupported** | No `use:action` directive. |
 | Transitions and animations | **Unsupported** | No `transition:`, `in:`, or `out:` directives. |
 | Dynamic tags | **Unsupported** | No `<svelte:element>`. `<svelte:component>` is rejected with `VELA-SVELTE-COMPONENT`; use `<vela:component>`. |
 | Svelte special elements | **Unsupported** | No `<svelte:window>`, `<svelte:document>`, `<svelte:body>`, or `<svelte:self>`. `<svelte:head>` is rejected with `VELA-SVELTE-HEAD`; use `<vela:head>`. |

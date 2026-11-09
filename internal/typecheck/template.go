@@ -47,6 +47,11 @@ type templateItem struct {
 type templateRegion struct {
 	start, end int
 	tag, attr  string
+	// action is set for use:name (task 093): the region is the parameters
+	// (empty without a value) and [nameStart, nameEnd) the action reference.
+	action             bool
+	nameStart, nameEnd int
+	tagStart           int
 }
 
 func isComponentTag(name string) bool {
@@ -64,7 +69,7 @@ func tagName(src string, start int) string {
 
 // isDynamicAttr reports an attribute whose value is an expression.
 func isDynamicAttr(name string) bool {
-	for _, prefix := range []string{":", "@", "bind:", "class:", "style:"} {
+	for _, prefix := range []string{":", "@", "bind:", "class:", "style:", "use:"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
@@ -130,6 +135,14 @@ func scanTemplate(src string, start, end int) []templateItem {
 				}
 			} else {
 				for _, a := range tag.attrs {
+					if strings.HasPrefix(a.name, "use:") && !a.shorthand {
+						r := &templateRegion{start: a.valStart, end: a.valEnd, tag: name, attr: a.name, action: true, nameStart: a.nameStart + len("use:"), nameEnd: a.nameEnd, tagStart: tag.nameStart}
+						if a.kind != attrExpr {
+							r.start, r.end = a.nameEnd, a.nameEnd
+						}
+						items = append(items, templateItem{region: r})
+						continue
+					}
 					if a.kind != attrExpr {
 						continue
 					}
@@ -378,6 +391,22 @@ func writeTemplate(w *writer, start, end int) {
 // writeAttr writes the expression of a dynamic attribute of an element: an
 // event handler gets its event type from $$on.
 func writeAttr(w *writer, r templateRegion) {
+	if r.action {
+		// use:name={params}: the action takes this element and the
+		// parameters (task 093).
+		w.gen("$$action(")
+		w.copy(r.nameStart, r.nameEnd)
+		w.gen(", ")
+		// An element the action does not take is reported at its tag.
+		w.anchored(r.tagStart, r.tagStart+len(r.tag), func() { w.gen("$$element(" + quote(r.tag) + ")") })
+		if strings.TrimSpace(w.src[r.start:r.end]) != "" {
+			w.gen(", (")
+			w.copyTrimmed(r.start, r.end)
+			w.gen(")")
+		}
+		w.gen(");\n")
+		return
+	}
 	if strings.HasPrefix(r.attr, "@") {
 		event := strings.SplitN(r.attr[1:], ".", 2)[0]
 		w.gen("$$on(\"" + event + "\", ")

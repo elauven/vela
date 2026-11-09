@@ -182,6 +182,19 @@ declare module 'vela' {
   /** Reports whether an ancestor set a value for key. Call it while the component starts. */
   export function hasContext(key: string): boolean;
 
+  /** What an action returns: update gets new parameters, destroy runs when the element goes away. */
+  export interface ActionReturn<P = undefined> {
+    update?: (params: P) => void;
+    destroy?: () => void;
+  }
+
+  /**
+   * The function of a `use:name={params}` directive. It runs once the element
+   * is in the document (after hydration, once the page committed), never on
+   * the server.
+   */
+  export type Action<E extends Element = HTMLElement, P = undefined> = (node: E, params: P) => ActionReturn<P> | void;
+
   /** Removes a subscription. Idempotent. */
   export type Unsubscriber = () => void;
 

@@ -15,7 +15,7 @@
  */
 
 import { $$contextParent, $$contextRun, $$isDev, $$lazyById, warn } from './runtime.js';
-import { $$owner, $$setHydration, $$createCursor, $$listen, $$appHead } from './runtime-blocks.js';
+import { $$owner, $$setHydration, $$createCursor, $$listen, $$action, $$queueAction, $$appHead } from './runtime-blocks.js';
 
 export const MISMATCH = 'VELA-HYDRATION-MISMATCH';
 
@@ -172,6 +172,12 @@ function hydrateCursor(pos, owner, session, ctx) {
     },
     listen(target, event, handler, options) {
       $$listen(owner, target, event, handler, options);
+    },
+    // action starts use: on the adopted node after the commit (task 093); a
+    // rolled-back hydration never starts it. An adoption inside a build
+    // (serverComponent() in a new branch) waits for that build's insert.
+    action(node, action, read) {
+      return $$action(owner, node, action, read, (start) => session.after.push(() => $$queueAction(start)), cursor.ctx);
     },
     // block adopts a block; under repair a mismatch inside it remounts the
     // block from its server range with a create cursor.

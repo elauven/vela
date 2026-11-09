@@ -103,6 +103,10 @@ func TestCheckTypes(t *testing.T) {
 		{"src/Errors.vela", "TS2551", "text.toFixed|toFixed"},
 		{"src/Checked.vela", "TS2322", "amount = 'none'|amount"},
 		{"src/Checked.vela", "TS2339", "amount.nope|nope"},
+		{"src/Actions.vela", "TS2345", "use:tooltip={42}|42"},
+		{"src/Actions.vela", "TS2345", "<div use:select|div"},
+		{"src/Actions.vela", "TS2345", "<span use:tooltip|tooltip"},
+		{"src/Actions.vela", "TS2304", "use:missing|missing"},
 	}
 	for _, ts := range []string{"typescript-5.8", "typescript"} {
 		t.Run(ts, func(t *testing.T) {

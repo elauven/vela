@@ -192,7 +192,7 @@ func tagName(src string, start int) string {
 
 // isDynamicAttr reports an attribute whose value is an expression.
 func isDynamicAttr(name string) bool {
-	for _, prefix := range []string{":", "@", "bind:", "class:", "style:"} {
+	for _, prefix := range []string{":", "@", "bind:", "class:", "style:", "use:"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}

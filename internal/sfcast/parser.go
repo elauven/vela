@@ -964,8 +964,13 @@ type Attr struct {
 	IsBindThis bool // bind:this={ref} → write the live element into `ref`
 	IsClassDir bool // class:foo={cond} → toggle the `foo` class based on cond
 	IsStyleDir bool
-	Pos        int // style:foo={expr} → set inline style property `foo` to expr
-	Expr       *TemplateExpr
+	// IsAction marks use:name={params} (task 093): Name is the action
+	// reference as written (`tooltip`, `lib.tooltip`), Action its parsed
+	// expression, and Expr the parameters (nil without a value).
+	IsAction bool
+	Action   *TemplateExpr
+	Pos      int // style:foo={expr} → set inline style property `foo` to expr
+	Expr     *TemplateExpr
 }
 
 func (e *ElementNode) NodeKind() string   { return "element" }
@@ -1688,6 +1693,7 @@ func (p *parser) parseComponentNode(name string, elementStart int) (Node, error)
 }
 
 func (p *parser) parseAttrs(elem *ElementNode) error {
+	firstAttr := len(elem.Attrs)
 	for {
 		p.skipWS()
 		if p.eof() || p.ch() == '>' || p.has("/>") {
@@ -1785,6 +1791,15 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				Name: rest, Value: value,
 				IsBind: true, IsTwoWay: true,
 			})
+		case strings.HasPrefix(name, "use:"):
+			ref := name[len("use:"):]
+			if !actionReference(ref) {
+				return &TemplateSyntaxError{Pos: start + len("use:"), Err: fmt.Errorf("use:%s must name an action: a variable or a member such as use:tooltip or use:lib.tooltip", ref)}
+			}
+			if valueKind != AttrValueMissing && valueKind != AttrValueBraced {
+				return &TemplateSyntaxError{Pos: valuePos, Err: fmt.Errorf("use:%s takes its parameters in braces: use:%s={params}", ref, ref)}
+			}
+			elem.Attrs = append(elem.Attrs, &Attr{Name: ref, Value: value, IsAction: true})
 		case strings.HasPrefix(name, ":"):
 			elem.Attrs = append(elem.Attrs, &Attr{Name: name[1:], Value: value, IsBind: true})
 		default:
@@ -1836,8 +1851,42 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 			}
 		}
 	}
+	for _, a := range elem.Attrs[firstAttr:] {
+		if !a.IsAction {
+			continue
+		}
+		a.Action = p.templateExpr(a.Name, a.Pos+len("use:"))
+		if a.Value != "" {
+			exprPos := a.Pos
+			from := a.Pos + len("use:") + len(a.Name)
+			if i := strings.Index(p.src[from:], "{"); i >= 0 {
+				exprPos = from + i + 1
+			}
+			a.Expr = p.templateExpr(UnwrapBraces(a.Value), exprPos)
+		}
+	}
 	mergeStaticClass(elem)
 	return nil
+}
+
+// actionReference reports whether ref, the name of a use: directive, is an
+// identifier or a dotted member path of identifiers.
+func actionReference(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	for _, part := range strings.Split(ref, ".") {
+		if part == "" {
+			return false
+		}
+		for i, r := range part {
+			letter := r == '_' || r == '$' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r > 0x7f
+			if !letter && (i == 0 || r < '0' || r > '9') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // mergeStaticClass joins class="a b" and :class={expr} on one element into

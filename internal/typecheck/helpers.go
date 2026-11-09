@@ -13,6 +13,14 @@ declare const $$retry: () => void;
 declare function $$on<K extends keyof HTMLElementEventMap>(event: K, handler: (event: HTMLElementEventMap[K]) => any): void;
 declare function $$on(event: string, handler: (event: Event) => any): void;
 
+/** The element type of a tag name, for use: (task 093). */
+type $$VelaElement<T extends string> = T extends keyof HTMLElementTagNameMap ? HTMLElementTagNameMap[T] : T extends keyof SVGElementTagNameMap ? SVGElementTagNameMap[T] : HTMLElement;
+declare function $$element<T extends string>(tag: T): $$VelaElement<T>;
+/** use:action={params}: the action takes the element and the parameters. */
+declare function $$action<E extends Element, P>(action: (node: E, params: P) => any, node: E, params: P): void;
+/** use:action without a value: the action takes no parameters. */
+declare function $$action<E extends Element>(action: (node: E, params?: undefined) => any, node: E): void;
+
 /** The component of a value of <vela:component :this>, a Lazy one loaded. */
 type $$VelaUnlazy<C> = C extends import('vela').Lazy<infer L> ? L : C;
 type $$VelaCandidates<C> = $$VelaUnlazy<Exclude<C, null | undefined | false>>;

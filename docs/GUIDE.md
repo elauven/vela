@@ -344,6 +344,49 @@ Shorthand: `class:active` (no value) is equivalent to
 Hyphenated CSS names map to camelCase automatically — `style:font-size`
 sets `.style.fontSize`. The same no-value shorthand applies.
 
+### `use:` — actions
+
+`use:name={params}` attaches a DOM library (a tooltip, a focus trap, drag
+and drop) to an element in one line. The action is a function of the
+element and the parameters; it may return `update` and `destroy`:
+
+```
+<script>
+  import { createTooltip } from './tooltip.js';
+
+  let label = $state('Save the draft');
+
+  function tooltip(node, text) {
+    const tip = createTooltip(node, text);
+    return {
+      update(next) { tip.setText(next); },
+      destroy() { tip.remove(); },
+    };
+  }
+</script>
+<template>
+  <button use:tooltip={label}>Save</button>
+  <div use:trapFocus>…</div>
+</template>
+```
+
+- The action runs once the element is in the document; after
+  hydration it runs when the page has committed. It never runs on the
+  server, which writes nothing for the directive.
+- `update(params)` runs when a value the parameters read changes;
+  `destroy()` runs when the element goes away: a branch or row change,
+  `{#key}`, or the component's destruction.
+- `use:name` without a value calls `name(node)`. The name is a variable
+  or a member path (`use:lib.tooltip`); it is read once, when the action
+  starts.
+- An action that throws while it starts fails the enclosing
+  `{#boundary}`.
+- `use:` works on elements, not on components (`VELA-ACTION-TARGET`):
+  pass the action to the child as a prop and use it on an element there.
+- In TypeScript, type the function with `Action<Element, Params>` from
+  `vela` (`import type { Action } from 'vela'`); `vela check --types`
+  checks the element and the parameters.
+
 ---
 
 ## 7. Block constructs
@@ -854,6 +897,7 @@ Scoping is identical either way.
 | `bind:this={x}` | element reference |
 | `class:name={cond}` | conditional class |
 | `style:prop={expr}` | inline style property |
+| `use:action={params}` | action: `action(node, params)` with `update`/`destroy` |
 | `{#if}` `{:else if}` `{:else}` `{/if}` | conditional |
 | `{#each list as item, i}` `{/each}` | list |
 | `{#key expr}` `{/key}` | keyed re-creation |

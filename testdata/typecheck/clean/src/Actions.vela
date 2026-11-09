@@ -1,0 +1,24 @@
+<script lang="ts">
+  import type { Action } from 'vela';
+
+  export let hint: string = '';
+
+  const tooltip: Action<HTMLElement, string> = (node, text) => {
+    node.title = text;
+    return {
+      update(next) {
+        node.title = next;
+      },
+    };
+  };
+  const select: Action<HTMLInputElement> = (node) => {
+    node.select();
+  };
+  const lib = { tooltip };
+</script>
+
+<template>
+  <p use:tooltip={hint}>a</p>
+  <input use:select />
+  <span use:lib.tooltip={`${hint}!`}>c</span>
+</template>

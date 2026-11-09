@@ -322,6 +322,8 @@ const (
 	SSRAttrClassDirective
 	SSRAttrStyleDirective
 	SSRAttrEvent
+	// SSRAttrAction is use:name={params} (task 093): browser-only, no HTML.
+	SSRAttrAction
 )
 
 type SSRPlanAttr struct {
@@ -786,6 +788,8 @@ func (b *ssrPlanBuilder) attrs(attrs []*sfcast.Attr) []SSRPlanAttr {
 		switch {
 		case attr.IsEvent:
 			role = SSRAttrEvent
+		case attr.IsAction:
+			role = SSRAttrAction
 		case attr.IsTwoWay:
 			role = SSRAttrTwoWay
 		case attr.IsBindThis:

@@ -481,7 +481,9 @@ func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {
 			if attr.ValueKind != sfcast.AttrValueMissing {
 				open += "=\"" + html.EscapeString(attr.Value) + "\""
 			}
-		case SSRAttrEvent:
+		case SSRAttrEvent, SSRAttrAction:
+			// Listeners and actions attach in the browser (task 093): they
+			// have no HTML and are never translated.
 			continue
 		case SSRAttrTwoWay:
 			// bind:value and bind:checked have faithful server forms. The

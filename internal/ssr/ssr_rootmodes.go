@@ -43,7 +43,7 @@ func ssrTemplateInteractive(nodes []sfcast.Node) bool {
 			attrs = n.Attrs
 		}
 		for _, attr := range attrs {
-			if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis {
+			if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsAction {
 				return true
 			}
 		}

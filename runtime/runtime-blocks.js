@@ -24,12 +24,13 @@ void $$runtimeContract1;
 
 // stats counts live owners and listeners for the destroy checks of the
 // test harness (Q-10.2 item 5, task 052).
-const stats = { owners: 0, listeners: 0 };
+const stats = { owners: 0, listeners: 0, actions: 0 };
 
-// $$debugStats reports live owners, live listeners, and queued updates.
+// $$debugStats reports live owners, live listeners, live actions with a
+// destroy, and queued updates.
 export function $$debugStats() {
   const batch = globalThis[Symbol.for('vela.batch')];
-  return { owners: stats.owners, listeners: stats.listeners, queued: batch ? batch.queue.length : 0 };
+  return { owners: stats.owners, listeners: stats.listeners, actions: stats.actions, queued: batch ? batch.queue.length : 0 };
 }
 
 // $$listen adds an event listener that the owner removes.
@@ -65,6 +66,70 @@ export function $$owner(parent) {
   };
   if (parent) parent.add(() => owner.release());
   return owner;
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────
+// use:action={params} (task 093) calls action(node, params) once the node
+// is in the document. A fragment builds detached and is inserted as a
+// whole, so actions created meanwhile wait in actionQueue until the
+// outermost build has inserted its DOM (collectActions); the hydrate cursor
+// starts them after the commit instead. The returned { update, destroy }
+// is called when the parameters change and when the owner is released.
+
+let actionQueue = null;
+
+// collectActions runs build, which creates DOM and inserts it, and starts
+// the actions created meanwhile after it returns. A nested build adds to
+// the queue of the outer one. A build that throws starts none.
+function collectActions(build) {
+  if (actionQueue) return build();
+  const queue = (actionQueue = []);
+  let result;
+  try {
+    result = build();
+  } finally {
+    actionQueue = null;
+  }
+  for (const start of queue) start();
+  return result;
+}
+
+// $$queueAction starts an action now, or after the build in progress has
+// inserted its DOM.
+export function $$queueAction(start) {
+  if (actionQueue) actionQueue.push(start);
+  else start();
+}
+
+// $$action attaches action to node under owner, for both cursors. read
+// returns the parameters (null without a value); schedule decides when
+// the action starts. An action that throws while it starts fails the
+// enclosing {#boundary} of ctx; errors of update reach it through the
+// component's flush.
+export function $$action(owner, node, action, read, schedule, ctx) {
+  let handle = null;
+  let started = false;
+  schedule(() => guarded(ctx, () => {
+    if (owner.done) return;
+    if (typeof action !== 'function') throw new TypeError('vela: the value of a use: directive is not a function');
+    started = true;
+    handle = read ? action(node, read()) : action(node);
+    if (handle && typeof handle.destroy === 'function') {
+      stats.actions++;
+      owner.add(() => {
+        stats.actions--;
+        handle.destroy();
+      });
+    }
+  }));
+  return {
+    // p passes the current parameters to update; before the action starts
+    // it has nothing to update.
+    p() {
+      if (!started || owner.done || !handle || typeof handle.update !== 'function') return;
+      handle.update(read());
+    },
+  };
 }
 
 // ── Ranges ───────────────────────────────────────────────────────────────
@@ -174,6 +239,10 @@ function createCursor(parent, before, owner, ctx) {
     listen(target, event, handler, options) {
       $$listen(owner, target, event, handler, options);
     },
+    // action starts use: once the build that creates node has inserted it.
+    action(node, action, read) {
+      return $$action(owner, node, action, read, $$queueAction, cursor.ctx);
+    },
     block(kind, ...args) {
       return kind(cursor, ...args);
     },
@@ -186,12 +255,14 @@ function createCursor(parent, before, owner, ctx) {
 // fragment, so its owner is not registered with a parent: a parent cleanup
 // per mounted branch or row would accumulate across updates.
 function mountFragment(fragmentFn, scope, before, ctx) {
-  const owner = $$owner(null);
-  const container = document.createDocumentFragment();
-  const handle = fragmentFn(createCursor(container, null, owner, ctx), scope);
-  const range = rangeOf(container);
-  before.parentNode.insertBefore(container, before);
-  return { owner, handle, range, scope };
+  return collectActions(() => {
+    const owner = $$owner(null);
+    const container = document.createDocumentFragment();
+    const handle = fragmentFn(createCursor(container, null, owner, ctx), scope);
+    const range = rangeOf(container);
+    before.parentNode.insertBefore(container, before);
+    return { owner, handle, range, scope };
+  });
 }
 
 // mountGuarded is mountFragment for content that may throw while it mounts
@@ -201,10 +272,12 @@ function mountGuarded(fragmentFn, scope, before, ctx) {
   const owner = $$owner(null);
   const container = document.createDocumentFragment();
   try {
-    const handle = fragmentFn(createCursor(container, null, owner, ctx), scope);
-    const range = rangeOf(container);
-    before.parentNode.insertBefore(container, before);
-    return { owner, handle, range, scope };
+    return collectActions(() => {
+      const handle = fragmentFn(createCursor(container, null, owner, ctx), scope);
+      const range = rangeOf(container);
+      before.parentNode.insertBefore(container, before);
+      return { owner, handle, range, scope };
+    });
   } catch (error) {
     owner.release();
     throw error;
@@ -312,20 +385,22 @@ export function $$mountComponent(target, fragmentFn, wrapperScope, setRoot, getR
     }
     return view;
   }
-  let view;
-  if (wrapperScope != null) {
-    const wrapper = document.createElement('div');
-    if (wrapperScope) wrapper.setAttribute(wrapperScope, '');
-    wrapper.style.display = 'contents';
-    setRoot(wrapper);
-    view = $$mountRoot(wrapper, fragmentFn, undefined, ctx);
-  } else {
-    view = $$mountRoot(document.createDocumentFragment(), fragmentFn, undefined, ctx);
-  }
-  const root = getRoot();
-  if (target.nodeType === 8) target.parentNode.insertBefore(root, target);
-  else target.appendChild(root);
-  return view;
+  return collectActions(() => {
+    let view;
+    if (wrapperScope != null) {
+      const wrapper = document.createElement('div');
+      if (wrapperScope) wrapper.setAttribute(wrapperScope, '');
+      wrapper.style.display = 'contents';
+      setRoot(wrapper);
+      view = $$mountRoot(wrapper, fragmentFn, undefined, ctx);
+    } else {
+      view = $$mountRoot(document.createDocumentFragment(), fragmentFn, undefined, ctx);
+    }
+    const root = getRoot();
+    if (target.nodeType === 8) target.parentNode.insertBefore(root, target);
+    else target.appendChild(root);
+    return view;
+  });
 }
 
 // rootView is the view of a component's template. fail(error) passes an

@@ -888,7 +888,7 @@ func astHoleSubtreeOK(nodes []sfcast.Node) bool {
 			// innerHTML path cannot express.
 			for _, a := range n.Attrs {
 				if a.IsEvent || a.IsBind || a.IsTwoWay ||
-					a.IsBindThis || a.IsClassDir || a.IsStyleDir {
+					a.IsBindThis || a.IsClassDir || a.IsStyleDir || a.IsAction {
 					return false
 				}
 			}

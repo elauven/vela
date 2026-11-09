@@ -396,6 +396,7 @@ var elementDirectives = []struct{ label, snippet, detail string }{
 	{"bind:this", "bind:this={${1}}", "the element"},
 	{"class:", "class:${1:name}={${2}}", "conditional class"},
 	{"style:", "style:${1:property}={${2}}", "dynamic style property"},
+	{"use:", "use:${1:action}={${2}}", "action"},
 }
 
 func (s *server) completion(doc *document, off int) any {

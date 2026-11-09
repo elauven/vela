@@ -621,6 +621,9 @@ func checkAttrRefs(a *sfcast.Attr, known map[string]bool, templateText string, d
 	if a.Expr != nil {
 		checkCachedExprRefs(a.Expr, known, templateText, ds)
 	}
+	if a.Action != nil {
+		checkCachedExprRefs(a.Action, known, templateText, ds)
+	}
 }
 
 // CheckExprRefs parses a small JS expression and resolves every
@@ -908,9 +911,9 @@ func validateHeadContent(nodes []sfcast.Node, templateOffset int, ds *diag.DiagS
 				continue
 			}
 			for _, attr := range n.Attrs {
-				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir {
+				if attr.IsEvent || attr.IsTwoWay || attr.IsBindThis || attr.IsClassDir || attr.IsStyleDir || attr.IsAction {
 					apos, aend := at(attr.Span)
-					ds.Report(diag.SevError, apos, aend, "VELA-HEAD-CONTENT", "Use static or :dynamic attributes.", "events, bindings and class:/style: directives are not allowed in <vela:head>")
+					ds.Report(diag.SevError, apos, aend, "VELA-HEAD-CONTENT", "Use static or :dynamic attributes.", "events, bindings, actions and class:/style: directives are not allowed in <vela:head>")
 				}
 			}
 			for _, child := range n.Children {
@@ -1040,7 +1043,7 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 			// An attribute given twice (class="a" :class={b}) was written
 			// twice by the server, where the browser keeps the first, and
 			// replaced by the client: the two renderings differed (task 031).
-			if !a.IsEvent && !a.IsClassDir && !a.IsStyleDir && !a.IsBindThis {
+			if !a.IsEvent && !a.IsClassDir && !a.IsStyleDir && !a.IsBindThis && !a.IsAction {
 				if seen[a.Name] {
 					help := "Keep one " + a.Name + " attribute."
 					if a.Name == "class" {
@@ -1051,7 +1054,7 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 				seen[a.Name] = true
 			}
 			// Static attribute values are not interpolated.
-			if !a.IsEvent && !a.IsBind && !a.IsTwoWay && !a.IsClassDir && !a.IsStyleDir && a.Expr == nil {
+			if !a.IsEvent && !a.IsBind && !a.IsTwoWay && !a.IsClassDir && !a.IsStyleDir && !a.IsAction && a.Expr == nil {
 				if open := strings.Index(a.Value, "{"); open >= 0 && strings.Contains(a.Value[open:], "}") {
 					ds.Report(diag.SevWarning, attrPos(a), attrEnd(a), "VELA-ATTR-BRACES", "Write :"+a.Name+"={`...${value}...`} for a computed value.", "braces in the static value of %q are not interpolated; the attribute is the literal text %q", a.Name, a.Value)
 				}
@@ -1087,6 +1090,11 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 				walk(n.Children)
 			case *sfcast.ComponentNode:
 				checkAttrs(n.Attrs)
+				for _, a := range n.Attrs {
+					if a != nil && a.IsAction {
+						report(a, "VELA-ACTION-TARGET", "Put use: on an element inside the component, or pass the action to it as a prop.", "use:%s is not allowed on a component; actions attach to elements", a.Name)
+					}
+				}
 				for _, slot := range n.Slots {
 					walk(slot)
 				}

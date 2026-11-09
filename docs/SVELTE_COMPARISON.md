@@ -69,7 +69,7 @@ needed.
 | `<svelte:element>`, `<svelte:self>` | ✓ | — |
 | `<svelte:head>` | ✓ | `<vela:head>` at the top level of a template: title, meta, link and JSON-LD; the deepest component wins a key, also on the server |
 | `<svelte:window>`, `<svelte:document>`, `<svelte:body>` | ✓ | — |
-| `use:` actions | ✓ | — (use `bind:this` with `onMount` or `$effect`) |
+| `use:` actions | ✓ | ✓ (`use:name={params}`, Svelte 4 semantics; no `{@attach}`) |
 | `transition:`, `in:`, `out:`, `animate:` | ✓ | — |
 
 ## Tooling and server rendering
