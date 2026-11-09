@@ -86,11 +86,28 @@ func buildExample(t *testing.T) (root, server string) {
 	t.Helper()
 	testkit.RequireGo(t)
 	root = testkit.CopyProject(t, filepath.Join(testkit.RepoRoot(t), "examples", "app"))
-	// The browser checks run with view transitions (task 096), and an
-	// onNavigate hook records the title before and after each change.
-	if err := os.WriteFile(filepath.Join(root, gen.ConfigFile), []byte(`{"viewTransitions": true}`+"\n"), 0o644); err != nil {
+	// The browser checks run with view transitions (task 096) and the
+	// history cache (task 097); an onNavigate hook records the title before
+	// and after each change, and the users loaders declare dependency keys.
+	if err := os.WriteFile(filepath.Join(root, gen.ConfigFile), []byte(`{"viewTransitions": true, "historyCache": {"max": 10, "maxAge": 60000}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	patch := func(file, old, new string) {
+		path := filepath.Join(root, filepath.FromSlash(file))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), old) {
+			t.Fatalf("%s has no %q", file, old)
+		}
+		if err := os.WriteFile(path, []byte(strings.Replace(string(data), old, new, 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	patch("server/routes/users/load.go", "type List struct", "var Deps = app.Deps{Keys: []string{\"users\"}}\n\ntype List struct")
+	patch("server/routes/users/id.int.param/load.go", "	id, _ := strconv.Atoi(r.Params[\"id\"])", "	store.CountLoad(\"users/Page\")\n	id, _ := strconv.Atoi(r.Params[\"id\"])")
+	patch("server/routes/users/id.int.param/load.go", "// Render keeps", "var Deps = app.Deps{Keys: []string{\"user\"}}\n\n// Render keeps")
 	if _, diags := gen.Generate(root); len(diags) > 0 {
 		t.Fatal(gen.Error(diags))
 	}
@@ -100,7 +117,8 @@ func buildExample(t *testing.T) (root, server string) {
 		t.Fatal(err)
 	}
 	hook := `
-import { onNavigate } from '@govela/app/client';
+import { onNavigate, invalidate } from '@govela/app/client';
+window.__invalidate = invalidate;
 onNavigate(async () => {
   const before = document.title;
   await new Promise((resolve) => setTimeout(resolve, 20));

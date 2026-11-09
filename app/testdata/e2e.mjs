@@ -98,6 +98,42 @@ async function check(browser, url, c, files) {
 // each returns nothing or throws. They use the links of the example where
 // it has them and add a link to the body otherwise.
 const scenarios = [
+  ['invalidate(key) runs the loaders that depend on the key (task 097)', async (t) => {
+    await t.open('/users/1');
+    const before = await t.loads();
+    const requests = t.requests();
+    await t.page.evaluate(() => window.__invalidate('user'));
+    let after = await t.loads();
+    t.equal(after['users/Page'] - (before['users/Page'] || 0), 1, 'runs of the user page');
+    t.equal(after['users/Layout'], before['users/Layout'], 'runs of the users layout');
+    t.equal(t.requests(), requests + 1, 'requests');
+    t.equal(await t.text('article h1'), 'Ada', 'page');
+    await t.page.evaluate(() => window.__invalidate('nothing'));
+    t.equal(t.requests(), requests + 1, 'a key no level depends on makes no request');
+    await t.page.evaluate(() => window.__invalidate('users'));
+    const layout = await t.loads();
+    t.equal(layout['users/Layout'] - after['users/Layout'], 1, 'invalidate("users") runs the users layout');
+    t.equal(layout['users/Page'] - after['users/Page'], 1, 'and the page below it');
+  }],
+  ['back and forward within maxAge make no request (task 097)', async (t) => {
+    await t.open('/users/1');
+    await t.follow('aside a[href="/users/2"]');
+    const requests = t.navigations();
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('article h1'), 'Ada', 'back');
+    t.equal(await t.page.title(), 'Ada · Users', 'title after back');
+    t.equal(t.navigations(), requests, 'requests after back');
+    await t.navigation(() => t.page.goForward());
+    t.equal(await t.text('article h1'), 'Grace', 'forward');
+    t.equal(await t.page.title(), 'Grace · Users', 'title after forward');
+    t.equal(t.navigations(), requests, 'requests after forward');
+    // A key invalidation drops the cache: back asks the server again.
+    await t.page.evaluate(() => window.__invalidate('user'));
+    const fresh = t.navigations();
+    await t.navigation(() => t.page.goBack());
+    t.equal(await t.text('article h1'), 'Ada', 'back after invalidate');
+    t.equal(t.navigations(), fresh + 1, 'requests after invalidate and back');
+  }],
   ['a navigation runs onNavigate and changes the page in a view transition (task 096)', async (t) => {
     await t.open('/users/1');
     t.equal(await t.page.evaluate(() => typeof document.startViewTransition), 'function', 'Chromium has view transitions');
@@ -410,8 +446,11 @@ async function runScenarios(browser, url, restart) {
     });
     page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
     let navRequests = 0;
+    // Navigation requests without prefetches (task 097).
+    let navigations = 0;
     page.on('request', (r) => {
       if (r.headers()['x-vela-navigate']) navRequests++;
+      if (r.headers()['x-vela-navigate'] && r.headers()['x-vela-purpose'] !== 'prefetch') navigations++;
     });
     page.on('response', (r) => {
       if (r.request().headers()['x-vela-navigate']) responses.push(r.json().catch(() => null));
@@ -448,6 +487,9 @@ async function runScenarios(browser, url, restart) {
       },
       requests() {
         return navRequests;
+      },
+      navigations() {
+        return navigations;
       },
       // formResult runs action and waits for a failed form action.
       async formResult(action) {

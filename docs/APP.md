@@ -265,6 +265,18 @@ server/routes/**                  internal/appgen/routes_gen.go
   A level whose key changes runs again, and so does every level below it
   (N-4). A layout's data may therefore depend on its parent's data through
   `Parent` without declaring it.
+
+  `Keys` name data the loaders read that the URL does not show (task 097):
+
+  ```go
+  var Deps = app.Deps{Keys: []string{"cart"}}
+  ```
+
+  `invalidate('cart')` in the browser runs again the first level of the
+  current chain that declares `cart`, with the levels below it (N-4), and
+  keeps the levels above; a key no level declares makes no request. The
+  segments carry their keys as `depends` (N-5). A key is 1 to 64 letters,
+  digits, `_`, `-`, `.` or `:` (`app.New` rejects others).
 - **L-7** A loader may declare the response mode of its route with
   `const Render = app.RenderAuto` (the default), `app.RenderData`,
   `app.RenderFragment`, `app.RenderDocument` (R-8) or `app.RenderClient`
@@ -574,8 +586,9 @@ before every loader and action of the subtree. Request data comes from
   ```
 
   - `segments` are the chain levels from `start` to the end, and the client
-    keeps the levels before `start`. Each segment has `id`, `key`, and
-    either `data` (the loader result, or `null`) or `error`
+    keeps the levels before `start`. Each segment has `id`, `key`, the
+    optional `depends` (the `Deps.Keys` of the level, L-6), and either
+    `data` (the loader result, or `null`) or `error`
     (`{ "status": 404, "message": "…" }`). A segment with `error` is the
     `Error.vela` of R-3. It is always the last one, and its `id` is the id
     of that error component. Errors are therefore ordinary data responses,
@@ -646,6 +659,7 @@ vela && go build ./...
 | `goModule` | the module of `go.mod` | import root of the mirrored tree and the matchers |
 | `ssrModule` | `"ssrModule"` of `vela.config.json` (required) | import root of the generated renderers |
 | `typescript` | `false` | a TypeScript project (docs/TYPESCRIPT.md TS-8): `VelaApp.vela` is `lang="ts"`, and the route types below are generated |
+| `historyCache` | `false` | `true` or `{ "max": 20, "maxAge": 300000 }`: `client.js` starts the router with the history cache (task 097) |
 | `viewTransitions` | `false` | `client.js` starts the router with `viewTransitions: true`: a navigation changes the page inside `document.startViewTransition` (task 096) |
 
 ### Generated files
@@ -848,6 +862,7 @@ import { goto, invalidate, navigating, beforeNavigate, onNavigate, afterNavigate
 | --- | --- |
 | `goto(url, { replace, state, invalidate })` | navigates like a link; `state` is kept in `history.state.state`; `invalidate` runs every loader again. Resolves when the navigation ends |
 | `invalidate()` | loads the current URL again with every loader (empty `X-Vela-Have`), keeping the history entry, the scroll position and the focus |
+| `invalidate('cart', …)` | the same from the first level whose `Deps.Keys` names one of the keys (L-6): `X-Vela-Have` holds the keys of the levels above it. Without such a level it resolves at once, without a request |
 | `navigating` | a store: `null`, or `{ from, to, type }` while a navigation loads, for loading indicators (`$navigating`) |
 | `beforeNavigate(fn)` | `fn({ from, to, type, cancel })` before each navigation; `cancel()` keeps the page. Returns a function that removes `fn` |
 | `onNavigate(fn)` | `fn({ from, to, type })` once the navigation has what it shows, right before the page changes. The change waits for a promise `fn` returns; a function it returns (or resolves with) runs after the change. Returns a function that removes `fn` |
@@ -1009,6 +1024,20 @@ func add(ctx context.Context, r *app.Request) (any, error) {
 navigation's answer and loads the modules it needs. The answer serves one
 navigation to the same URL with the same `X-Vela-Have` within 30 s.
 `invalidate()` and form actions clear it.
+
+### History cache
+
+With `"historyCache": true` in `vela.app.json` (or
+`start({ historyCache: { max: 20, maxAge: 5 * 60_000 } })`, the defaults),
+the router keeps the route, the segments and the head of the last `max`
+history entries it showed, by history index. Back and forward to such an
+entry within `maxAge` milliseconds show it without a request; the
+protocol does not change. The cache holds only pages whose levels are all
+data: a page with a fragment level (R-8) asks the server again.
+`invalidate()`, `invalidate(key)`, `goto(url, { invalidate: true })` and
+form actions clear it, and a new entry drops the entries after it.
+`beforeNavigate`, `onNavigate` and `afterNavigate` run as for any
+navigation.
 
 ### Deploys
 

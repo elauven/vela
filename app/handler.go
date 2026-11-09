@@ -167,6 +167,15 @@ func checkRoutes(t Routes) error {
 	if t.Root.Render == nil {
 		return errors.New("app: Routes.Root.Render is nil; pass appgen.Routes()")
 	}
+	for _, route := range t.Routes {
+		for _, l := range route.Chain {
+			for _, k := range l.Deps.Keys {
+				if !ValidDependencyKey(k) {
+					return fmt.Errorf("app: level %s declares the dependency key %q; a key is 1 to 64 letters, digits, _ - . or :", l.ID, k)
+				}
+			}
+		}
+	}
 	for _, p := range t.Patterns {
 		if p.Route < 0 || p.Route >= len(t.Routes) {
 			return fmt.Errorf("app: a pattern names route %d of %d", p.Route, len(t.Routes))
@@ -390,6 +399,9 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 	var preload []string
 	for i, l := range o.run.levels[:o.rendered] {
 		entry := map[string]any{"id": l.level.ID, "key": o.keys[i], "data": l.view}
+		if len(l.level.Deps.Keys) > 0 {
+			entry["depends"] = l.level.Deps.Keys
+		}
 		if o.form != nil && i == len(o.run.levels)-1 {
 			entry["form"] = o.form
 		}
@@ -452,7 +464,7 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 	heads, header := o.collect()
 	segments := make([]protocol.Segment, 0, o.rendered-o.start+1)
 	for i, l := range o.run.levels[o.start:o.rendered] {
-		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Data: l.data})
+		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Depends: l.level.Deps.Keys, Data: l.data})
 	}
 	if o.segError != nil {
 		segments = append(segments, protocol.Segment{ID: o.errorID, Key: o.errorKey(), Error: o.segError})

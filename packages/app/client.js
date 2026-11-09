@@ -77,10 +77,12 @@ export function goto(url, { replace = false, state, invalidate = false } = {}) {
 }
 
 // invalidate() loads the current URL again with every loader, keeping the
-// scroll position, the focus and the history entry.
-export function invalidate() {
+// scroll position, the focus and the history entry. invalidate('cart', …)
+// runs again only the levels whose Deps.Keys name one of the keys, with
+// the levels below them (task 097); without such a level it does nothing.
+export function invalidate(...keys) {
   if (!router) return Promise.resolve();
-  return router.navigate(new URL(location.href), { type: 'invalidate', replace: true, invalidate: true, keep: true });
+  return router.invalidate(keys);
 }
 
 // start({ VelaApp, routes, root, onMismatch, preload, viewTransitions })
@@ -94,8 +96,11 @@ export function invalidate() {
 // every navigation of the router then dispatches 'vela:navigated', and a
 // failed form action 'vela:form'. viewTransitions: true changes the page of
 // a navigation inside document.startViewTransition where the browser has it
-// and prefers-reduced-motion does not ask for less motion.
-export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, preload = 'hover', viewTransitions = false } = {}) {
+// and prefers-reduced-motion does not ask for less motion. historyCache
+// (true, or { max, maxAge } in milliseconds) keeps the data of the last
+// history entries, so back and forward within maxAge show them without a
+// request (task 097).
+export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, preload = 'hover', viewTransitions = false, historyCache = false } = {}) {
   if (typeof VelaApp !== 'function') throw new TypeError('@govela/app/client: start() needs VelaApp');
   const target = typeof root === 'string' ? document.getElementById(root) : root;
   if (!target) throw new Error(`@govela/app/client: no element #${root} in the document`);
@@ -105,7 +110,7 @@ export async function start({ VelaApp, routes, root = 'vela-app', onMismatch, pr
   const options = onMismatch ? { onMismatch } : {};
   const app = hydrate(VelaApp, target, options);
   if (routes && props && Array.isArray(props.chain)) {
-    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain, preload, viewTransitions });
+    router = createRouter({ VelaApp, app, routes, target, route: props.route, chain: props.chain, preload, viewTransitions, historyCache });
   }
   target.dispatchEvent(new CustomEvent('vela:hydrated', { bubbles: true, detail: { app } }));
   return { app, routes };
@@ -124,7 +129,7 @@ function payloadProps(target) {
   return null;
 }
 
-function createRouter({ VelaApp, app, routes, target, route, chain, preload, viewTransitions }) {
+function createRouter({ VelaApp, app, routes, target, route, chain, preload, viewTransitions, historyCache }) {
   const build = document.querySelector('meta[name="vela-build"]')?.getAttribute('content') || '';
   const scroll = readScroll();
   let index = typeof history.state?.[indexKey] === 'number' ? history.state[indexKey] : 0;
@@ -138,6 +143,30 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
   const statics = new WeakSet();
   // The URL the page shows, without its hash.
   let shown = withoutHash(location.href);
+
+  // The history cache (task 097): history index → { url, at, route,
+  // chain, head } of a page whose levels are all data (no fragment views).
+  const cacheLimits = historyCache ? { max: 20, maxAge: 5 * 60_000, ...(historyCache === true ? {} : historyCache) } : null;
+  const cached = new Map();
+  // The merged head of the page (R-6): the last response's, at first the
+  // app tags the server wrote.
+  let head = readAppHead();
+  function remember(at) {
+    if (!cacheLimits) return;
+    cached.delete(index);
+    if (stack.length !== 1 || Object.keys(stack[0].views).length > 0) return;
+    cached.set(index, { url: shown, at, route, chain: chain.map(withoutForm), head });
+    while (cached.size > cacheLimits.max) cached.delete(cached.keys().next().value);
+  }
+  function recall(url, at) {
+    const entry = cacheLimits && cached.get(at);
+    if (!entry) return null;
+    if (entry.url !== withoutHash(url.href) || Date.now() - entry.at > cacheLimits.maxAge) {
+      cached.delete(at);
+      return null;
+    }
+    return entry;
+  }
 
   history.replaceState({ ...history.state, [indexKey]: index }, '');
   history.scrollRestoration = 'manual';
@@ -182,8 +211,17 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
     if (controller) controller.abort();
     const own = new AbortController();
     controller = own;
-    if (opts.invalidate) clearPrefetched();
+    if (opts.invalidate || opts.have) {
+      clearPrefetched();
+      cached.clear();
+    }
     navigatingStore.set({ from, to, type: opts.type });
+    // Back or forward to a page the cache holds: no request (task 097).
+    const entry = opts.type === 'popstate' ? recall(url, opts.index) : null;
+    if (entry) {
+      const body = { v: protocolVersion, type: 'data', route: entry.route, start: 0, segments: entry.chain, head: entry.head };
+      return show(body, { at: url, how, opts: { ...opts, cachedAt: entry.at }, own, from, to, fallback: () => fullLoad(url, how) });
+    }
     // The modules of a data or client-only route (task 092) load while the
     // server answers; another route may get a fragment that needs none of
     // them.
@@ -193,13 +231,13 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
 
     let body;
     let at = url;
-    const have = opts.invalidate ? '' : haveKeys().join(',');
+    const have = opts.invalidate ? '' : (opts.have || haveKeys()).join(',');
     for (let redirects = 0; ; redirects++) {
       let result;
       try {
         // A prefetched answer serves one navigation (task 078).
-        const cached = redirects === 0 && !opts.invalidate ? takePrefetched(at, have) : null;
-        result = await (cached ? cached.catch(() => fetchNavigation(at, have, own.signal)) : fetchNavigation(at, have, own.signal));
+        const prefetchedBody = redirects === 0 && !opts.invalidate && !opts.have ? takePrefetched(at, have) : null;
+        result = await (prefetchedBody ? prefetchedBody.catch(() => fetchNavigation(at, have, own.signal)) : fetchNavigation(at, have, own.signal));
       } catch {
         if (own.signal.aborted) return;
         // A network error or an answer that is not the protocol (N-1).
@@ -277,6 +315,7 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
         index++;
         // The entries after this one are gone.
         for (const key of Object.keys(scroll)) if (Number(key) > index) delete scroll[key];
+        for (const key of [...cached.keys()]) if (key >= index) cached.delete(key);
       } else {
         history.replaceState(state, '', at.href);
       }
@@ -290,11 +329,17 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
       await tick();
     };
     if (viewTransitions && typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      await document.startViewTransition(change).updateCallbackDone;
+      const transition = document.startViewTransition(change);
+      // A skipped transition (a newer one, a hidden page) rejects these.
+      transition.ready.catch(() => {});
+      transition.finished.catch(() => {});
+      await transition.updateCallbackDone;
     } else {
       await change();
     }
     for (const fn of after) fn();
+    if (body.head) head = body.head;
+    remember(opts.cachedAt || Date.now());
 
     if (!opts.keep) {
       if (how === 'popstate') {
@@ -473,6 +518,8 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
     const own = new AbortController();
     controller = own;
     clearPrefetched();
+    // A form action may change any data the cache holds.
+    cached.clear();
     const from = current();
     // The page the action belongs to: the URL without ?/name.
     const page = new URL(action.href);
@@ -634,7 +681,19 @@ function createRouter({ VelaApp, app, routes, target, route, chain, preload, vie
     saveScroll();
     writeScroll(scroll);
   });
-  return { navigate };
+  // invalidate(keys) runs the loaders again: every one without keys, else
+  // those from the first level that depends on one of them (task 097).
+  function invalidate(keys) {
+    const here = new URL(location.href);
+    const opts = { type: 'invalidate', replace: true, keep: true };
+    if (keys.length === 0) return navigate(here, { ...opts, invalidate: true });
+    const level = chain.findIndex((segment) => Array.isArray(segment.depends) && segment.depends.some((key) => keys.includes(key)));
+    if (level < 0) return Promise.resolve();
+    return navigate(here, { ...opts, have: haveKeys().slice(0, level) });
+  }
+
+  remember(Date.now());
+  return { navigate, invalidate };
 }
 
 function withoutForm(segment) {
@@ -714,6 +773,25 @@ function createAnnouncer() {
 // applyHead replaces the app's title and meta tags (R-6). The tags of the
 // components' <vela:head> stay: replaceAppHead lets the deeper value win
 // (task 091). Without a head the page keeps its head (N-5).
+// readAppHead is the merged head of the server document: the app tags of
+// r.Head() and Config.Head it wrote with data-vela-head="app:<depth>".
+function readAppHead() {
+  const head = { meta: [] };
+  for (const node of document.head.querySelectorAll('[data-vela-head^="app:"]')) {
+    const depth = Number(node.getAttribute('data-vela-head').slice(4)) || 0;
+    if (node.localName === 'title') {
+      head.title = node.textContent;
+      head.titleDepth = depth;
+    } else if (node.localName === 'meta') {
+      const meta = { content: node.getAttribute('content') || '', depth };
+      if (node.hasAttribute('property')) meta.property = node.getAttribute('property');
+      else meta.name = node.getAttribute('name') || '';
+      head.meta.push(meta);
+    }
+  }
+  return head;
+}
+
 function applyHead(head) {
   if (!head) return;
   const tags = [];

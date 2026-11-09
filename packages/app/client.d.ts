@@ -54,6 +54,8 @@ export interface StartOptions {
   preload?: 'hover' | 'viewport' | 'off';
   /** Change the page of a navigation inside document.startViewTransition (where supported, without prefers-reduced-motion). */
   viewTransitions?: boolean;
+  /** Keep the data of the last history entries: back and forward within maxAge (ms, default 5 minutes) show them without a request; max entries (default 20). */
+  historyCache?: boolean | { max?: number; maxAge?: number };
 }
 
 /** Hydrates the server document and installs the router. */
@@ -71,8 +73,12 @@ export interface GotoOptions {
 /** Navigates like a link click; resolves when the navigation ends. */
 export function goto(url: string | URL, options?: GotoOptions): Promise<void>;
 
-/** Loads the current URL again with every loader, keeping scroll and focus. */
-export function invalidate(): Promise<void>;
+/**
+ * Loads the current URL again, keeping scroll and focus: with every loader,
+ * or with keys only from the first level whose Deps.Keys names one of them
+ * (and the levels below it). Without such a level it resolves at once.
+ */
+export function invalidate(...keys: string[]): Promise<void>;
 
 /** null, or the navigation that is loading. */
 export const navigating: {

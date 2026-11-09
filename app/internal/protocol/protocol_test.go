@@ -240,7 +240,7 @@ func TestEncodeRejectsInvalidResponses(t *testing.T) {
 func TestDecodeRoundTrip(t *testing.T) {
 	for _, r := range []Response{
 		{Type: TypeData, Build: "b", Route: route(), Start: 1, Head: &Head{Title: "t"},
-			Segments: []Segment{{ID: "a", Key: "k1", Data: json.RawMessage(`[1,2]`)}, {ID: "b", Key: "k2"}}},
+			Segments: []Segment{{ID: "a", Key: "k1", Data: json.RawMessage(`[1,2]`)}, {ID: "b", Key: "k2", Depends: []string{"cart", "user"}}}},
 		{Type: TypeData, Build: "b", Route: route(), Start: 0, Segments: []Segment{{ID: "e", Key: "k", Error: &SegmentError{Status: 404, Message: "m"}}}},
 		{Type: TypeFragment, Build: "b", Route: route(), Start: 2, Segments: []Segment{}, Fragment: &Fragment{HTML: "<b>", Static: false}},
 		{Type: TypeRedirect, Build: "b", Location: "/x", Status: 307},
@@ -279,6 +279,23 @@ func TestDecodeRejects(t *testing.T) {
 		_, err := Decode([]byte(tc.in))
 		if err == nil || !strings.Contains(err.Error(), tc.msg) || errors.Is(err, ErrVersion) != tc.version {
 			t.Errorf("Decode(%s): %v, want %q (version error %v)", tc.in, err, tc.msg, tc.version)
+		}
+	}
+}
+
+// TestSegmentDepends: depends is written only when a level has keys
+// (task 097).
+func TestSegmentDepends(t *testing.T) {
+	for _, c := range []struct {
+		s    Segment
+		want string
+	}{
+		{Segment{ID: "a", Key: "k"}, `{"id":"a","key":"k","data":null}`},
+		{Segment{ID: "a", Key: "k", Depends: []string{"cart"}}, `{"id":"a","key":"k","depends":["cart"],"data":null}`},
+	} {
+		b, err := json.Marshal(c.s)
+		if err != nil || string(b) != c.want {
+			t.Errorf("%+v: %s %v, want %s", c.s, b, err, c.want)
 		}
 	}
 }
