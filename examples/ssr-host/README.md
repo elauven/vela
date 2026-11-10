@@ -42,8 +42,8 @@ compiler it is built with:
 require github.com/elauven/vela/ssr_runtime v0.9.0
 ```
 
-Every generated file references `vela.ContractV7`; a runtime of another
-contract version fails `go build` with `undefined: vela.ContractV7` instead
+Every generated file references `vela.ContractV8`; a runtime of another
+contract version fails `go build` with `undefined: vela.ContractV8` instead
 of misbehaving. A fork or renamed runtime module is set with
 `"runtime": {"module": "…"}` in `vela.ssr.json`.
 

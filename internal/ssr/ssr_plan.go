@@ -302,6 +302,16 @@ type SSRPlanBoundary struct {
 
 func (*SSRPlanBoundary) ssrPlanNode() {}
 
+// SSRPlanHtml is {@html value} (task 100): the markup written unescaped in
+// a hydration range whose start marker carries its hash.
+type SSRPlanHtml struct {
+	Span      srcspan.SectionSpan
+	Expr      *sfcast.TemplateExpr
+	DynamicID int
+}
+
+func (*SSRPlanHtml) ssrPlanNode() {}
+
 func (*SSRPlanElement) ssrPlanNode()   {}
 func (*SSRPlanComponent) ssrPlanNode() {}
 func (*SSRPlanSlot) ssrPlanNode()      {}
@@ -346,6 +356,7 @@ const (
 	SSRDynamicKey
 	SSRDynamicAwait
 	SSRDynamicComponent
+	SSRDynamicHtml
 )
 
 // SSRDynamicSite records stable dynamic order for the future paired hydration
@@ -594,6 +605,8 @@ func (b *ssrPlanBuilder) nodes(nodes []sfcast.Node) []SSRPlanNode {
 				boundary.Line, boundary.Column = line+1, column+1
 			}
 			out = append(out, boundary)
+		case *sfcast.HtmlTagNode:
+			out = append(out, &SSRPlanHtml{Span: n.Span, Expr: n.Expr, DynamicID: b.dynamic(SSRDynamicHtml, n.Expr, n.Span)})
 		case *sfcast.AwaitBlockNode:
 			markerID := b.dynamic(SSRDynamicAwait, n.Expr, n.Span)
 			out = append(out, &SSRPlanAwait{

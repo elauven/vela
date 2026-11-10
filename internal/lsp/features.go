@@ -293,6 +293,10 @@ func (s *server) hover(doc *document, off int) any {
 		if child := s.openComponent(file); file != "" && child != nil {
 			return withRange(componentSummary(name, file, child), ctx.wordStart, ctx.wordStart+len(tagName(src, ctx.wordStart-1)))
 		}
+	case inBlock:
+		if strings.HasPrefix(src[ctx.wordStart:], "{@html") {
+			return withRange(markdown("{@html markup}", htmlTagNote), ctx.wordStart+1, ctx.wordStart+len("{@html"))
+		}
 	case inAttrName:
 		if ctx.tag == "vela:component" {
 			word := attrWord(src, ctx.wordStart, off)
@@ -379,7 +383,11 @@ var blocks = []struct{ label, snippet string }{
 	{"/key", "{/key}"},
 	{"/client", "{/client}"},
 	{"/boundary", "{/boundary}"},
+	{"@html", "{@html ${1:markup}}"},
 }
+
+// htmlTagNote describes {@html} (task 100) for hover.
+const htmlTagNote = "inserts the string value of the expression as HTML, without escaping; `null` and `undefined` render nothing. Sanitize markup that does not come from you (bluemonday in Go, DOMPurify in the browser). Scoped styles do not reach the inserted elements: style them with `:global(...)`."
 
 // elementDirectives are the attributes offered on an HTML element.
 var elementDirectives = []struct{ label, snippet, detail string }{
@@ -550,7 +558,7 @@ func (s *server) completion(doc *document, off int) any {
 			if end < len(src) && src[end] == '}' {
 				end++
 			}
-			for _, b := range blocks[:5] {
+			for _, b := range append(blocks[:5:5], blocks[len(blocks)-1]) {
 				item := edit(off-1, end, b.label, b.snippet, KindKeyword, "block")
 				item.FilterText = "{" + b.label
 				items = append(items, item)

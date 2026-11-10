@@ -1,0 +1,43 @@
+<script>
+  import { Snippet } from './Snippet.vela';
+
+  export let title = 'Release notes';
+  export let bodyHtml = '<p>Vela renders <strong>trusted</strong> markup.</p><ul><li>one</li><li>two</li></ul>';
+  let sections = $state([
+    { id: 'a', html: '<h3>Server</h3><p>The Go renderer writes it unescaped.</p>' },
+    { id: 'b', html: '<h3>Client</h3><p>Hydration adopts the nodes.</p>' },
+  ]);
+  let expanded = $state(true);
+  let icon = $state('<circle cx="8" cy="8" r="6"></circle>');
+
+  function toggle() {
+    expanded = !expanded;
+    icon = expanded ? '<circle cx="8" cy="8" r="6"></circle>' : '<rect x="2" y="2" width="12" height="12"></rect>';
+  }
+
+  function rotate() {
+    sections = [...sections.slice(1), sections[0]];
+  }
+</script>
+
+<template>
+  <article class="article">
+    <h2><svg class="icon" width="16" height="16" viewBox="0 0 16 16">{@html icon}</svg> {title}</h2>
+    <div class="body">{@html bodyHtml}</div>
+    <button class="toggle" @click={toggle}>{expanded ? 'Collapse' : 'Expand'}</button>
+    <button class="rotate" @click={rotate}>Rotate</button>
+    {#if expanded}
+      {#each sections as section (section.id)}
+        <section class="section">{@html section.html}</section>
+      {/each}
+    {:else}
+      <p class="collapsed">{sections.length} sections</p>
+    {/if}
+    <Snippet :code={'<code>vela --ssr</code>'} />
+  </article>
+</template>
+
+<style>
+  .body :global(strong) { color: crimson; }
+  .section :global(h3) { margin: 0; }
+</style>

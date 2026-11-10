@@ -154,6 +154,7 @@ through the given cursor.
 | `$$client(main, fallback)` | `{#client}` and client-only components | Contract `SSR_TRANSLATION_CONTRACT.md` §9. In hydrate mode it adopts the fallback range and mounts `main` with a create cursor after the root commits. In CSR it mounts `main` directly. |
 | `$$boundary(body, catch, where)` | `{#boundary}…{:catch error, retry}…{/boundary}` | Mounts `body`; an error replaces it with `catch`, which receives `{ error, retry }` (B-3.12). Hydration follows §6.5. |
 | `$$head(entries, changed)` | `<vela:head>` at the top level of a template | Keeps the component's tags in the registry of `document.head` (B-3.13); hydration adopts the server's tags (§6.4a). |
+| `$$html(value, ns, changed)` | `{@html value}` | Owns the nodes between two anchors: the markup of `value()` (B-3.17). A changed string replaces them; an unchanged one does no DOM work. |
 
 - **B-3.7 Slot ownership.** A slot fragment is defined by the parent and
   mounted inside the child. It is owned by the child's `$$slot` block, which
@@ -219,6 +220,18 @@ through the given cursor.
   a keyed `$$each` around the reconcile. `prefers-reduced-motion` skips
   every animation. `$$boundary`, `$$client`, `$$slot` and `$$dynamic` do
   not play transitions.
+- **B-3.17 Raw HTML.** `$$html` (task 100) converts its value like
+  JavaScript `String(value)`, with `null` and `undefined` as `""`, and
+  parses it with a `<template>` element; `ns` (`'svg'`, `'math'` or
+  `null`), which the compiler knows from the enclosing elements of the
+  component, parses it inside a root element of that namespace, and
+  without it the parent element of the anchors decides when the markup is
+  written. The markup is inserted as is, without sanitizing, and carries no
+  scope attribute. The block has no fragment of its own: releasing it
+  removes the nodes between its anchors and the anchors. The cursor
+  creates elements under `<svg>` and `<math>` in their namespaces too
+  (`element(tag, attrs, ns)`, `$$template(html, ns)`), the content of
+  `<foreignObject>` in HTML. Hydration follows §5.1 and X-7.6.
 - **B-3.8 Multiple roots.** In the first delivery, components keep their
   current CSR DOM shape, including the `display: contents` wrapper for
   multi-root templates. Whether to drop the wrapper is open (§12).
@@ -292,7 +305,14 @@ state      = ""            ; #each, #key, component, slot, row
            | "p" | "t" | "c"   ; #await: pending / then / catch
            | "f"           ; $$client: fallback is rendered
            | "c"           ; $$boundary: the catch branch is rendered ("" for the body)
+           | "h" hash      ; {@html}: hash of the markup (X-7.6), base 36
 ```
+
+`{@html}` writes `<!--[h{hash}-->markup<!--]-->`: the markup unescaped
+between the markers, nothing in the payload. The hash is 32-bit FNV-1a
+over the UTF-16 code units of the markup (lone surrogates as U+FFFD, as
+the server writes them), in base 36 (`vela.HTMLHash`, `htmlHash` of
+`runtime-hydrate.js`). A static render writes the markup without markers.
 
 Example for the template in §2 inside `{#if open}<ul>…</ul>{/if}`:
 
@@ -306,10 +326,13 @@ Example for the template in §2 inside `{#if open}<ul>…</ul>{/if}`:
 - **M-5.2 Rows.** Each `#each` row is its own range, because a row may have
   several top-level nodes.
 - **M-5.3 No data in markers.** Markers carry only the state token. Keys,
-  values, and identifiers are never written into markers.
+  values, and identifiers are never written into markers; the hash of a
+  `{@html}` range is its token.
 - **M-5.4 Reserved comments.** Comments whose text starts with `[` or `]`
   are reserved for markers. Author HTML comments in templates are not
-  emitted in either CSR or SSR output.
+  emitted in either CSR or SSR output. `{@html}` markup is written as it
+  is, comments included; markers inside it must be balanced (server HTML
+  of another Vela root is).
 - **M-5.5 Text runs.** No separator comments are used; C-4.3 makes them
   unnecessary.
 - **M-5.6 Root delimitation.** A root is rendered as one range followed
@@ -333,8 +356,8 @@ cursor expects. The compiler guarantees this at compile time.
     `<button>`;
   - elements inside `<option>`, children of void elements.
 - **M-5.9 Text-only elements.** Inside `<textarea>`, `<title>`, `<script>`,
-  and `<style>` only one text run is allowed and no blocks; markers cannot
-  exist there. `<textarea>` content is handled as a form value (C-4.5).
+  and `<style>` only one text run is allowed and no blocks or `{@html}`
+  (`VELA-HTML-TAG-PLACEMENT`); markers cannot exist there. `<textarea>` content is handled as a form value (C-4.5).
 - **M-5.10 Whitespace.** Whitespace is decided once, by the template parser,
   with the rules HTML renders (task 059): source whitespace between two
   sibling nodes of any kind is one space; whitespace at the start and the
@@ -548,6 +571,18 @@ components write no entry.
   compiled fragments name each adopted text, attribute, and block site with
   `$$c.at($$sites[n])` from a per-module site table that `--minify`
   builds omit.
+- **X-7.6 Raw HTML.** The hydrate cursor adopts a `{@html}` range
+  (`cursor.html`) without parsing its markup again: the start marker must
+  be `[h…`, and its end marker the matching `]` among the following
+  siblings. Markup the HTML parser rearranges moves the end marker — an
+  unclosed `<div>` takes it in, a `</p>` that closes the parent puts it
+  after the parent — which is a structural mismatch: the nodes are not
+  adopted, and the enclosing block (or the root) remounts under `repair`.
+  In development builds the client hashes its own markup; a hash different
+  from the marker's is a value mismatch (`server` is the adopted markup
+  written back from the DOM, `client` the client string): `repair`
+  replaces the nodes of the range, `fail` rolls back. Production builds do
+  not compare the hash.
 
 ---
 

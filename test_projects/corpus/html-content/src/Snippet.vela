@@ -1,0 +1,7 @@
+<script>
+  export let code = '';
+</script>
+
+<template>
+  <pre class="snippet">{@html code}</pre>
+</template>

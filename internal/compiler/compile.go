@@ -436,7 +436,11 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		if len(sfc.TemplateAST.Diagnostics) > 0 {
 			ds.PushOffset(sfc.TemplateAST.Span.Start)
 			for _, issue := range sfc.TemplateAST.Diagnostics {
-				ds.ErrorWith(issue.Pos, "VELA-TEMPLATE-SYNTAX", "fix the template syntax", "%s", issue.Message)
+				code, help := "VELA-TEMPLATE-SYNTAX", "fix the template syntax"
+				if issue.Code != "" {
+					code, help = issue.Code, issue.Help
+				}
+				ds.ErrorWith(issue.Pos, code, help, "%s", issue.Message)
 			}
 			ds.PopOffset()
 			return fmt.Errorf("template syntax validation failed")
@@ -544,6 +548,7 @@ func compileComponent(src, dest string, opts CompileOptions, read func() ([]byte
 		ValidateTemplateForms(tmpl, sfc.Template, ds)
 		ValidateSpecialElements(tmpl, sfc.TemplateOffset, ds)
 		ValidateGlobalElements(tmpl, analysis, sfc.TemplateOffset, ds)
+		ValidateHtmlTags(tmpl, sfc.TemplateOffset, ds)
 		ValidateLazyTags(tmpl, lazyBindings(scriptProg, sfc.LazyComponents), sfc.TemplateOffset, ds)
 		ValidateTemplateRefs(tmpl, analysis, scriptScope, sfc.Template, ds)
 		ValidateTemplateContextCalls(tmpl, scriptProg, ds)

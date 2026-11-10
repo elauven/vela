@@ -83,6 +83,8 @@ func nodeToJSON(node sfcast.Node) interface{} {
 		return componentNodeJSON(n)
 	case *sfcast.SlotNode:
 		return slotNodeJSON(n)
+	case *sfcast.HtmlTagNode:
+		return map[string]interface{}{"type": "HtmlTag", "expr": n.Expr.Source}
 	case *sfcast.BoundaryBlockNode:
 		m := map[string]interface{}{"type": "BoundaryBlock", "children": nodesToJSON(n.Children), "catchChildren": nodesToJSON(n.CatchChildren)}
 		if n.ErrorName != "" {

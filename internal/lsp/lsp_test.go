@@ -497,6 +497,21 @@ func TestCompletion(t *testing.T) {
 	check("window bindings", items, []string{"bind:innerWidth", "bind:scrollY", "bind:online"}, []string{"bind:visibilityState"})
 	items, _ = complete(17, "    <p>{count}</p>", "    <vela:document |/>")
 	check("document bindings", items, []string{"bind:visibilityState", "bind:activeElement"}, []string{"bind:innerWidth"})
+
+	// {@html} (task 100): the tag after {@ and after an opening brace, the
+	// names inside it, and its hover.
+	items, edited = complete(18, "<p>{count}</p>", "<p>{@h|}</p>")
+	check("html tag", items, []string{"@html"}, nil)
+	if item := items["@html"]; item.TextEdit == nil || !strings.HasPrefix(item.TextEdit.NewText, "{@html ") || item.FilterText != "{@html" {
+		t.Errorf("html tag edit %+v", item.TextEdit)
+	}
+	items, _ = complete(19, "<p>{count}</p>", "<p>{|}</p>")
+	check("html tag after a brace", items, []string{"@html", "#if"}, nil)
+	items, edited = complete(20, "<p>{count}</p>", "<p>{@html co|}</p>")
+	check("html tag expression", items, []string{"count", "items"}, nil)
+	if got := hoverText(t, c, uri, at(t, edited, "@html", 0, 2)); !strings.Contains(got, "without escaping") || !strings.Contains(got, "DOMPurify") {
+		t.Errorf("hover of {@html}: %q", got)
+	}
 }
 
 func keys(m map[string]CompletionItem) []string {

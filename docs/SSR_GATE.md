@@ -27,7 +27,8 @@ outcomes fails CI; a regression can only be recorded with a decision in
 | qwen-fixed | 2 | 1 | 0 | 1 | 0 | VELA-SSR-HOST-MISSING ×1 |
 | dynamic-views | 3 | 3 | 3 | 0 | 0 |  |
 | context-tree | 3 | 3 | 3 | 0 | 0 |  |
-| **total** | 73 | 47 | 46 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×12, VELA-SSR-HOST-MISSING ×12 |
+| html-content | 2 | 2 | 2 | 0 | 0 |  |
+| **total** | 75 | 49 | 48 | 1 | 0 | VELA-SSR-CHILD ×2, VELA-SSR-EXPR ×12, VELA-SSR-HOST-MISSING ×12 |
 
 A component is not checked in the browser when its default props make
 the render throw (as the client would), or when its Go package cannot
@@ -38,7 +39,7 @@ the site and the host or `{#client}` route that would fix it.
 
 | Outcome | Sites |
 | --- | ---: |
-| server-native | 830 |
+| server-native | 847 |
 | server-host | 2 |
 | unsupported | 111 |
 
@@ -57,5 +58,6 @@ as positive coverage.
 | qwen-todo | App.vela | VELA-DYNAMIC-CLASS |
 | qwen-todo | TodoItem.vela | VELA-BUILTIN-IMPORT |
 | qwen-todo | TodoItem.vela | VELA-DYNAMIC-CLASS |
+| unsupported-tags | App.vela | VELA-UNSUPPORTED-TAG |
 
-Totals: 73 positive components in 11 projects (46 checked in the browser); 2 negative projects with 7 required diagnostics.
+Totals: 75 positive components in 12 projects (48 checked in the browser); 3 negative projects with 8 required diagnostics.

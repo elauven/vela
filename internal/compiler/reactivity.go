@@ -548,6 +548,8 @@ func ValidateTemplateRefs(nodes []sfcast.Node, analysis *analyzer.Analysis, scri
 				}
 			case *sfcast.HeadNode:
 				walkNodes(n.Children)
+			case *sfcast.HtmlTagNode:
+				checkCachedExprRefs(n.Expr, known, templateText, ds)
 			case *sfcast.BoundaryBlockNode:
 				walkNodes(n.Children)
 				added := addEachBindings(known, []string{n.ErrorName, n.RetryName})
@@ -873,6 +875,50 @@ func ValidateSpecialElements(nodes []sfcast.Node, templateOffset int, ds *diag.D
 	walk(nodes)
 }
 
+// htmlTagRawTextParents are the elements whose content is text, where
+// {@html} cannot insert markup (task 100).
+var htmlTagRawTextParents = map[string]bool{"textarea": true, "title": true, "script": true, "style": true}
+
+// ValidateHtmlTags checks where {@html} stands (task 100): not inside an
+// element whose content is text, and not as a direct child of a component's
+// named slot (<svelte:fragment slot="name">{@html …}</svelte:fragment>),
+// whose content must be wrapped in an element. <vela:head> reports it as
+// VELA-HEAD-CONTENT.
+func ValidateHtmlTags(nodes []sfcast.Node, templateOffset int, ds *diag.DiagSet) {
+	report := func(n *sfcast.HtmlTagNode, help, format string, args ...any) {
+		ds.Report(diag.SevError, n.Span.Start-templateOffset, n.Span.End-templateOffset, "VELA-HTML-TAG-PLACEMENT", help, format, args...)
+	}
+	var walk func(ns []sfcast.Node, parent string)
+	walk = func(ns []sfcast.Node, parent string) {
+		for _, node := range ns {
+			switch n := node.(type) {
+			case *sfcast.HtmlTagNode:
+				if htmlTagRawTextParents[strings.ToLower(parent)] {
+					report(n, "Render the value as text with {value}, or move {@html} out of <"+parent+">.", "{@html} is not allowed in <%s>, whose content is text", parent)
+				}
+			case *sfcast.HeadNode:
+				// validateHeadContent reports it.
+			case *sfcast.ElementNode:
+				walk(n.Children, n.Tag)
+			case *sfcast.ComponentNode:
+				for name, slot := range n.Slots {
+					if name != "default" {
+						for _, child := range slot {
+							if html, ok := child.(*sfcast.HtmlTagNode); ok {
+								report(html, "Wrap it in an element: <div slot=\""+name+"\">{@html markup}</div>.", "{@html} cannot be the direct content of the named slot %q", name)
+							}
+						}
+					}
+					walk(slot, "")
+				}
+			default:
+				codegen.ForEachChildList(node, func(children []sfcast.Node) { walk(children, parent) })
+			}
+		}
+	}
+	walk(nodes, "")
+}
+
 // ValidateGlobalElements checks <vela:window> and <vela:document> (task
 // 095): one of each at the top level of the template, no content, and only
 // @event listeners and bind: of a read-only value of the target into a
@@ -1055,6 +1101,8 @@ func headNodeSpan(node sfcast.Node) srcspan.SectionSpan {
 		return n.Span
 	case *sfcast.HeadNode:
 		return n.Span
+	case *sfcast.HtmlTagNode:
+		return n.Span
 	}
 	return srcspan.SectionSpan{}
 }
@@ -1073,6 +1121,8 @@ func headNodeName(node sfcast.Node) string {
 		return "<slot>"
 	case *sfcast.HeadNode:
 		return "<vela:head>"
+	case *sfcast.HtmlTagNode:
+		return "{@html}"
 	}
 	return node.NodeKind()
 }

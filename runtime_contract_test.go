@@ -221,7 +221,8 @@ console.log('OK');
 // version: <vela:component> (task 070) introduced payload version 4 with
 // the "d" entry, component context (task 090) ContractV5, and error
 // boundaries and the document head (task 091) ContractV6, and client-only
-// component values (task 092) ContractV7.
+// component values (task 092) ContractV7, and {@html} (task 100)
+// ContractV8.
 func TestRuntimeContractAndPayloadVersionsAgree(t *testing.T) {
 	contract, err := os.ReadFile(filepath.Join("ssr_runtime", "contract.go"))
 	if err != nil {
@@ -230,8 +231,8 @@ func TestRuntimeContractAndPayloadVersionsAgree(t *testing.T) {
 	if want := "const " + SSRRuntimeContract + " = true"; !strings.Contains(string(contract), want) {
 		t.Errorf("ssr_runtime/contract.go does not declare %q", want)
 	}
-	if SSRRuntimeContract != "ContractV7" {
-		t.Errorf("SSRRuntimeContract = %s, want ContractV7", SSRRuntimeContract)
+	if SSRRuntimeContract != "ContractV8" {
+		t.Errorf("SSRRuntimeContract = %s, want ContractV8", SSRRuntimeContract)
 	}
 	goRuntime, err := os.ReadFile(filepath.Join("ssr_runtime", "runtime.go"))
 	if err != nil {

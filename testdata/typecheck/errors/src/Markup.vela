@@ -1,0 +1,11 @@
+<script lang="ts">
+  interface Post {
+    body: string;
+  }
+
+  export let post: Post = { body: '' };
+</script>
+
+<template>
+  <article class="content">{@html post.bodyHtml}</article>
+</template>

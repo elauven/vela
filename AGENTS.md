@@ -96,6 +96,15 @@ each optional section, in any order:
 ```
 
 - Use `{expression}` for text interpolation.
+- Use `{@html markup}` only for HTML that is already markup (a CMS, a
+  Markdown renderer, a highlighter). It is **not sanitized**: sanitize any
+  value that contains user input before it reaches the tag (bluemonday in a
+  Go host or loader, DOMPurify in the browser), and never use it for plain
+  text. Its elements get no scope attribute: style them with
+  `.wrapper :global(p)`. Put it in element content or a block, not in an
+  attribute, `<textarea>`, `<title>`, `<vela:head>` or directly in a
+  named slot (`VELA-HTML-TAG-PLACEMENT`); send balanced markup, because
+  markup the HTML parser rearranges is a hydration mismatch.
 - Use `:name={expression}` for every new dynamic HTML or component attribute.
   This is the project’s canonical style. Do not mix it with the compatible
   `name={expression}` shorthand in new code.
@@ -367,7 +376,8 @@ Do not generate or rely on the following in Vela applications:
   `<vela:window>` and `<vela:document>`), `<svelte:element>`,
   `<svelte:self>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
-- `{@html}`, `{@const}`, `{@debug}`, or event modifiers such as
+- `{@const}`, `{@debug}` (`VELA-UNSUPPORTED-TAG`: use `$derived` and
+  `console.log` in an `$effect`), or event modifiers such as
   `@click.prevent` (call `event.preventDefault()` in the handler).
 - Streaming SSR, islands or partial hydration, CSS source maps, or HMR.
   JavaScript source maps (`--sourcemap`) cannot be combined with `--minify`.
@@ -384,6 +394,8 @@ Before handing off a Vela component or application:
    has cleanup.
 3. Dynamic attributes use `:attribute={expression}`; events use
    `@event={handler}`.
+   Every `{@html}` value is trusted markup or sanitized before it gets
+   there.
 4. Reorderable lists use stable keys, and component two-way bindings target a
    `$bindable` child prop.
 5. The component uses only features marked supported in `docs/FEATURES.md`.

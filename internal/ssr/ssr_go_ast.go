@@ -27,7 +27,7 @@ func SSRRuntimeImport() string { return ssrRuntimePath }
 
 // SSRRuntimeContract is the contract marker every generated file references
 // (R-12.1d); it must match a constant the runtime exports.
-const SSRRuntimeContract = "ContractV7"
+const SSRRuntimeContract = "ContractV8"
 
 // BuildSSRGoSkeleton creates the declarations of a server renderer file,
 // including its Props type, entirely through the standard Go AST. The
@@ -85,7 +85,7 @@ func goImportDecl(path string) *goast.GenDecl {
 }
 
 // goRuntimeContractDecl references the runtime contract marker
-// (`var _ = vela.ContractV7`), so a runtime of another version fails go build
+// (`var _ = vela.ContractV8`), so a runtime of another version fails go build
 // with an undefined identifier (R-12.1d).
 func goRuntimeContractDecl() *goast.GenDecl {
 	return &goast.GenDecl{Tok: token.VAR, Specs: []goast.Spec{&goast.ValueSpec{
@@ -574,6 +574,7 @@ func ssrRuntimeTypesPackage(loader types.Importer) (*types.Package, error) {
 	ssrRuntimeAddFunc(pkg, "EndComponent", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "root", boolType), types.NewVar(token.NoPos, pkg, "props", rawMessage)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "OpenRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "state", stringType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	ssrRuntimeAddFunc(pkg, "CloseRange", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
+	ssrRuntimeAddFunc(pkg, "WriteHTMLTag", []*types.Var{types.NewVar(token.NoPos, pkg, "w", writer), types.NewVar(token.NoPos, pkg, "value", anyType)}, []*types.Var{types.NewVar(token.NoPos, pkg, "", errorType)})
 	// func AssignProp[T any](field *T, value any, prop string) error
 	assignT := types.NewTypeParam(types.NewTypeName(token.NoPos, pkg, "T", nil), types.NewInterfaceType(nil, nil))
 	pkg.Scope().Insert(types.NewFunc(token.NoPos, pkg, "AssignProp", types.NewSignatureType(nil, nil, []*types.TypeParam{assignT}, types.NewTuple(

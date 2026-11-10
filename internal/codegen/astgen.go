@@ -636,7 +636,8 @@ func (g *ASTGen) attrWriteStmt(varName string, attr *sfcast.Attr) jsast.JsStmt {
 	if IsBoolAttr(attr.Name) {
 		return jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(varName), attr.Name), jsast.GenBool(expr))
 	}
-	if attr.Name == "class" {
+	if attr.Name == "class" && (g.blocks == nil || g.blocks.ns == "") {
+		// An SVG or MathML element has no writable className.
 		return jsast.GenAssignStmt(jsast.GenMember(jsast.GenIdent(varName), "className"), jsast.GenString(expr))
 	}
 	return jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent(varName), "setAttribute"), jsast.GenStrLit(attr.Name), jsast.GenString(expr)))

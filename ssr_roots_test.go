@@ -16,7 +16,9 @@ func TestSSRManifestRootModes(t *testing.T) {
 	root := t.TempDir()
 	srcRoot := filepath.Join(root, "src")
 	files := map[string]string{
-		"Plain.vela":        `<template><p>static</p></template>`,
+		"Plain.vela": `<template><p>static</p></template>`,
+		// {@html} alone keeps a component static (task 100).
+		"Markup.vela":       `<script>export let body = '';</script><template><article>{@html body}</article></template>`,
 		"Click.vela":        `<template><button @click={() => {}}>x</button></template>`,
 		"Parent.vela":       `<script>import Click from './Click.vela';</script><template><div><Click /></div></template>`,
 		"Grand.vela":        `<script>import Parent from './Parent.vela';</script><template><section><Parent /></section></template>`,
@@ -49,7 +51,7 @@ func TestSSRManifestRootModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][2]string{
-		"Plain.vela": {"static", "Plain.js"}, "Click.vela": {"interactive", "Click.js"}, "Parent.vela": {"interactive", "Parent.js"},
+		"Plain.vela": {"static", "Plain.js"}, "Markup.vela": {"static", "Markup.js"}, "Click.vela": {"interactive", "Click.js"}, "Parent.vela": {"interactive", "Parent.js"},
 		"Grand.vela": {"interactive", "Grand.js"}, "Effect.vela": {"interactive", "Effect.js"},
 		"nested/Hook.vela": {"interactive", "nested/Hook.js"}, "nested/Bound.vela": {"interactive", "nested/Bound.js"},
 	}

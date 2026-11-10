@@ -36,7 +36,7 @@ for (const name of ['window', 'document', 'Node', 'HTMLElement', 'CustomEvent', 
 
 const COMMENT = 8;
 const ELEMENT = 1;
-const stateToken = /^(|\d+|x|e|p|t|c|f)$/;
+const stateToken = /^(|\d+|x|e|p|t|c|f|h[0-9a-z]+)$/;
 const stripComments = (html) => html.replace(/<!--[\s\S]*?-->/g, '');
 
 // parse parses server HTML as the body of a document, as a browser does.

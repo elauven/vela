@@ -154,16 +154,47 @@ export const processor = {
   supportsAutofix: true,
 };
 
+/**
+ * vela/no-at-html-tags (task 100): {@html} inserts markup without escaping,
+ * so a value from users is a cross-site scripting hole unless it is
+ * sanitized. The virtual document writes the tag as $$html(expression);
+ * the warning is at the expression.
+ */
+const noAtHtmlTags = {
+  meta: {
+    type: 'suggestion',
+    docs: { description: 'Disallow {@html}, which inserts markup without escaping' },
+    schema: [],
+    messages: {
+      unsafe: '{@html} inserts markup without escaping: sanitize values that do not come from you (bluemonday in Go, DOMPurify in the browser), or render text with {value}.',
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (node.callee.type === 'Identifier' && node.callee.name === '$$html' && node.arguments.length === 1) {
+          context.report({ node: node.arguments[0], messageId: 'unsafe' });
+        }
+      },
+    };
+  },
+};
+
+/** The rules of the plugin, as vela/<name>. */
+export const rules = { 'no-at-html-tags': noAtHtmlTags };
+
 const plugin = {
   meta: { name: manifest.name, version: manifest.version },
   processors: { vela: processor },
+  rules,
   configs: {},
 };
 
 /**
- * The recommended flat config: the processor for .vela files and the
- * intrinsics as globals of their code. Add your own rules after it, for
- * `**\/*.vela/*.js` (and `**\/*.vela/*.ts` with typescript-eslint).
+ * The recommended flat config: the processor for .vela files, the
+ * intrinsics as globals of their code and vela/no-at-html-tags as a
+ * warning. Add your own rules after it, for `**\/*.vela/*.js` (and
+ * `**\/*.vela/*.ts` with typescript-eslint).
  */
 plugin.configs.recommended = [
   {
@@ -180,6 +211,12 @@ plugin.configs.recommended = [
       sourceType: 'module',
       globals,
     },
+  },
+  {
+    name: 'vela/rules',
+    files: ['**/*.vela/*.js', '**/*.vela/*.ts'],
+    plugins: { vela: plugin },
+    rules: { 'vela/no-at-html-tags': 'warn' },
   },
 ];
 
