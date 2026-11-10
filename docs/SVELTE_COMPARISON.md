@@ -12,9 +12,11 @@ two differ. Svelte 5 reference: 5.x (2025). Vela status:
 - **Different syntax:** `@click` instead of `onclick`, `:attr={…}` for dynamic
   attributes, `export let` props, `$state.deep` for nested mutation.
 - **Different scope:** Vela renders on the server in **Go** (Svelte renders in
-  Node), and it is a compiler only: no SvelteKit-style framework, router or
-  bundler.
-- **Not in Vela:** snippets, `{@html}`, and most `<svelte:*>` elements.
+  Node). The compiler does not bundle; routing, loaders and navigation are
+  the separate Vela App layer ([APP.md](APP.md)), with loaders in Go where
+  SvelteKit has `load` in JavaScript.
+- **Not in Vela:** snippets, most `<svelte:*>` elements, and for now
+  `{@html}` (task 100) and event modifiers (task 101).
 
 ## Reactivity
 
@@ -39,12 +41,13 @@ needed.
 | Text | `{expr}` | `{expr}` |
 | Dynamic attribute | `href={url}` | `:href={url}` (`href={url}` accepted) |
 | DOM event | `onclick={fn}` | `@click={fn}` |
-| Event modifiers | — (Svelte 5 removed them) | — (`VELA-EVENT-MODIFIER`) |
+| Event modifiers | — (Svelte 5 removed them) | — (`VELA-EVENT-MODIFIER`); planned as `@click.prevent`, `@keydown.enter` (task 101) |
 | Bindings | `bind:value`, `bind:checked`, `bind:this`, `bind:group`, … | `bind:value`, `bind:checked`, `bind:this` |
 | `class:` / `style:` directives | ✓ | ✓ |
 | Static `class` with dynamic `class` | `class={[…]}` arrays and objects | `class="a" :class={b}` joined; no object or array form |
 | `{#if}`, `{#each}` (keyed, `{:else}`), `{#await}`, `{#key}` | ✓ | ✓ |
-| `{@html}`, `{@const}`, `{@debug}`, `{@render}` | ✓ | — |
+| `{@html}` | ✓ | — (planned, task 100) |
+| `{@const}`, `{@debug}`, `{@render}` | ✓ | — |
 | Snippets | `{#snippet}` | — (use slots) |
 | Browser-only content | `{#if browser}` with `$app/environment` | `{#client}…{:else}…{/client}`, `<script context="client">` |
 
@@ -79,7 +82,7 @@ needed.
 | Compiler | JavaScript (Node) | Go, single binary |
 | Language | JavaScript, TypeScript | JavaScript (ES2025 modules) and TypeScript (experimental; erasable syntax only, checked by `vela check --types` as `svelte-check` does) |
 | Bundling | Vite plugin | none: plain ES modules for any bundler or an import map |
-| SSR | Node, SvelteKit | Go renderers generated from the same components; JavaScript translated to Go or supplied as Go hosts |
+| SSR | Node, SvelteKit | Go renderers generated from the same components; JavaScript translated to Go or supplied as Go hosts; Vela App for routes, Go loaders, form actions and partial navigation |
 | Hydration | ✓ | ✓, with mismatch reports that name the source position |
 | Dev server, HMR | Vite | `--watch` only |
 | Diagnostics for Svelte habits | — | stable `VELA-*` codes with the Vela replacement |

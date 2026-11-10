@@ -15,8 +15,11 @@ src/Page.vela ──vela --ssr──► out/client/Page.js       (browser, hydra
 Your Go program owns everything else: routing, data loading, HTTP. Vela
 generates typed functions it can call.
 
-Status: **beta** (experimental contract, `v0`). What is checked on every
-change is listed in [SSR_GATE.md](SSR_GATE.md).
+Status: **beta** (`v0`): server rendering, hydration, the SSR report and Go
+hosts are complete for the scope of this page; their contract changes only
+with a note in [RELEASING.md](RELEASING.md) and a new runtime contract
+version (`vela.ContractVN`). What is checked on every change is listed in
+[SSR_GATE.md](SSR_GATE.md).
 
 | Document | Contents |
 | --- | --- |
@@ -45,7 +48,7 @@ The Go packages import the runtime module
 that module, never the compiler:
 
 ```
-require github.com/elauven/vela/ssr_runtime v0.1.0
+require github.com/elauven/vela/ssr_runtime v0.10.0
 ```
 
 Set the import path of the generated packages with `--ssr-module` or in

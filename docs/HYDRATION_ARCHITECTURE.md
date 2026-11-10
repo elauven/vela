@@ -194,6 +194,31 @@ through the given cursor.
   outside the document. The app's tags (`data-vela-head="app:<depth>"`)
   are entries too, losing a tie. The block has no DOM in place; releasing
   it removes its tags. A component with a head is `interactive` (§8.1).
+- **B-3.14 Actions.** `use:name={params}` (task 093) starts its action
+  only once the element is in the document: a create cursor queues it
+  until the outermost build has inserted its DOM, and a hydrate cursor
+  queues it on the commit (`session.after`), so a rolled-back hydration
+  never starts one. `update(params)` runs on the flush when a value the
+  parameters read changed; `destroy()` runs when the element's owner is
+  released. An action that throws while starting fails the enclosing
+  boundary (B-3.12). Nothing is rendered or translated on the server, and
+  a component with an action is `interactive` (§8.1).
+- **B-3.15 Window and document.** `<vela:window>` and `<vela:document>`
+  (task 095) have no DOM in place. Their listeners are attached through the
+  cursor and removed with the owner. A read-only binding writes its
+  `$state` at once when creating and on the commit when hydrating, so the
+  server's initial value is what hydration compares against and no
+  mismatch arises.
+- **B-3.16 Transitions.** `transition:`, `in:`, `out:` (task 096) belong to
+  the group of their owner. `$$if`, `$$key`, `$$each` (rows and fallback)
+  and `$$await` play intros only for mounts triggered by an update
+  (B-3.6), never on the first render or during hydration, and call
+  `leave()` instead of `unmount()`: the fragment is released at once, its
+  range stays in the block's leaving list until the outros finish, and
+  destroying the block finishes them. `animate:flip` measures the rows of
+  a keyed `$$each` around the reconcile. `prefers-reduced-motion` skips
+  every animation. `$$boundary`, `$$client`, `$$slot` and `$$dynamic` do
+  not play transitions.
 - **B-3.8 Multiple roots.** In the first delivery, components keep their
   current CSR DOM shape, including the `display: contents` wrapper for
   multi-root templates. Whether to drop the wrapper is open (§12).

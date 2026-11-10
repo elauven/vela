@@ -53,7 +53,7 @@ separate result) and `--runtime-import=bare` (imports `@govela/runtime`).
 The first line of `vela serve`:
 
 ```json
-{"protocol":1,"compilerVersion":"0.4.2","runtimePackage":"@govela/runtime","runtimeContract":"$$runtimeContract1"}
+{"protocol":1,"compilerVersion":"0.10.0","runtimePackage":"@govela/runtime","runtimeContract":"$$runtimeContract1"}
 ```
 
 A client refuses a compiler whose `protocol` it does not speak, and should
