@@ -1699,3 +1699,137 @@ func TestRuntimeNestingMatrix_OutroInAwait(t *testing.T) {
 		{"assertGlobal": "__velaRunning", "equals": 0},
 	})
 }
+
+// ── {@html} (task 100) ───────────────────────────────────────────
+// The html range is a block of its own: inside every block it updates in
+// place, and the block that owns it removes it whole.
+
+// html-in-if: the range goes and comes with its branch.
+func TestRuntimeNestingMatrix_HtmlInIf(t *testing.T) {
+	src := `<script>
+  let show = $state(true);
+  let markup = $state('<b class="h">one</b>');
+</script>
+<template><div class="box">
+  <button class="t" @click={() => show = !show}>t</button>
+  <button class="m" @click={() => markup = '<i class="h">two</i>'}>m</button>
+  {#if show}{@html markup}<span class="after">!</span>{:else}<s>off</s>{/if}
+</div></template>`
+	assertRuntime(t, "HtmlInIf", src, []rtStep{
+		{"assertText": "b.h", "equals": "one"},
+		{"click": "button.m"},
+		{"assertCount": "b.h", "equals": 0},
+		{"assertText": "i.h", "equals": "two"},
+		{"click": "button.t"},
+		{"assertCount": ".h", "equals": 0},
+		{"assertText": "div.box", "equals": "t m off"},
+		{"click": "button.t"},
+		{"assertText": "div.box", "equals": "t m two!"},
+	})
+}
+
+// html-in-each: a row's range follows its row through reorder and removal.
+func TestRuntimeNestingMatrix_HtmlInEach(t *testing.T) {
+	src := `<script>
+  let rows = $state([{ id: 1, html: '<b>a</b>' }, { id: 2, html: '<i>b</i>' }, { id: 3, html: 'c' }]);
+</script>
+<template><div class="list">
+  <button class="rev" @click={() => rows = [...rows].reverse()}>rev</button>
+  <button class="drop" @click={() => rows = rows.filter((r) => r.id !== 2)}>drop</button>
+  <button class="edit" @click={() => rows = rows.map((r) => r.id === 3 ? { id: 3, html: '<u>C</u>' } : r)}>edit</button>
+  {#each rows as row (row.id)}{@html row.html}{:else}<em>none</em>{/each}
+</div></template>`
+	assertRuntime(t, "HtmlInEach", src, []rtStep{
+		{"assertText": "div.list", "equals": "rev drop edit abc"},
+		{"click": "button.rev"},
+		{"assertText": "div.list", "equals": "rev drop edit cba"},
+		{"click": "button.edit"},
+		{"assertText": "u", "equals": "C"},
+		{"click": "button.drop"},
+		{"assertCount": "div.list i", "equals": 0},
+		{"assertText": "div.list", "equals": "rev drop edit Ca"},
+	})
+}
+
+// html-in-key: a new key recreates the range with the current markup.
+func TestRuntimeNestingMatrix_HtmlInKey(t *testing.T) {
+	src := `<script>
+  let k = $state(0);
+  let markup = $state('<b>x</b>');
+</script>
+<template><div class="box">
+  <button class="k" @click={() => { k++; markup = '<b>' + k + '</b>'; }}>k</button>
+  <button class="m" @click={() => markup = '<i>m</i>'}>m</button>
+  {#key k}<p class="body">{@html markup}</p>{/key}
+</div></template>`
+	assertRuntime(t, "HtmlInKey", src, []rtStep{
+		{"assertText": "p.body b", "equals": "x"},
+		{"click": "button.k"},
+		{"assertText": "p.body b", "equals": "1"},
+		{"click": "button.m"},
+		{"assertText": "p.body", "equals": "m"},
+		{"assertCount": "p.body", "equals": 1},
+	})
+}
+
+// html-in-await: pending and then branches each own their range.
+func TestRuntimeNestingMatrix_HtmlInAwait(t *testing.T) {
+	src := `<script>
+  let request = $state(Promise.resolve('<b class="done">done</b>'));
+  let wait = $state('<i class="wait">wait</i>');
+</script>
+<template><div class="box">
+  <button class="again" @click={() => request = Promise.resolve('<u class="done">again</u>')}>again</button>
+  {#await request}{@html wait}{:then markup}{@html markup}{:catch error}<p>{error}</p>{/await}
+</div></template>`
+	assertRuntime(t, "HtmlInAwait", src, []rtStep{
+		{"assertText": "b.done", "equals": "done"},
+		{"assertCount": "i.wait", "equals": 0},
+		{"click": "button.again"},
+		{"assertText": "u.done", "equals": "again"},
+		{"assertCount": "b.done", "equals": 0},
+	})
+}
+
+// html-in-boundary: a failing sibling removes the body's range with it.
+func TestRuntimeNestingMatrix_HtmlInBoundary(t *testing.T) {
+	src := `<script>
+  import { Thrower } from './Thrower.vela';
+  let v = $state('ok');
+</script>
+<template><div class="box">
+  <button class="bad" @click={() => v = 'bad'}>bad</button>
+  {#boundary}{@html '<b class="h">' + v + '</b>'}<Thrower :v={v} />{:catch e}<em>caught</em>{/boundary}
+</div></template>`
+	assertRuntimeSet(t, "HtmlInBoundary", map[string]string{"HtmlInBoundary": src, "Thrower": boundaryThrower}, []rtStep{
+		{"assertText": "b.h", "equals": "ok"},
+		{"click": "button.bad"},
+		{"assertCount": "b.h", "equals": 0},
+		{"assertText": "em", "equals": "caught"},
+	})
+}
+
+// html-in-slot: slot content with {@html} follows the parent's state.
+func TestRuntimeNestingMatrix_HtmlInSlot(t *testing.T) {
+	wrap := `<template><div class="wrap"><slot /><footer><slot name="foot" /></footer></div></template>`
+	app := `<script>
+  import Wrapper from './Wrapper.vela';
+  let show = $state(true);
+  let markup = $state('<b>hello</b>');
+</script>
+<template><div>
+  <button class="t" @click={() => show = !show}>t</button>
+  <button class="m" @click={() => markup = '<i>world</i>'}>m</button>
+  {#if show}<Wrapper>{@html markup}<p slot="foot">{@html markup}</p></Wrapper>{/if}
+</div></template>`
+	assertRuntimeSet(t, "App", map[string]string{"App": app, "Wrapper": wrap}, []rtStep{
+		{"assertText": "div.wrap", "equals": "hellohello"},
+		{"click": "button.m"},
+		{"assertText": "div.wrap", "equals": "worldworld"},
+		{"assertCount": "div.wrap b", "equals": 0},
+		{"click": "button.t"},
+		{"assertCount": "div.wrap", "equals": 0},
+		{"click": "button.t"},
+		{"assertText": "footer i", "equals": "world"},
+	})
+}

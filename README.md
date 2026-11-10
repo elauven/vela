@@ -195,8 +195,8 @@ contract changes before `v1` only with a note in
 [RELEASING.md](docs/RELEASING.md) and a new runtime contract or protocol
 version; every change is checked against a corpus of real applications in
 Chromium ([SSR_GATE.md](docs/SSR_GATE.md)). TypeScript is experimental: `<script lang="ts">`, `.ts` modules, `vela check --types`, declarations and route types ([TYPESCRIPT.md](docs/TYPESCRIPT.md)). Not included yet:
-`{@html}` (task 100), event modifiers (task 101), HMR (task 008), a static
-export of Vela Apps (task 098), streaming SSR and snippets.
+event modifiers (task 101), HMR (task 008), a static export of Vela Apps
+(task 098), streaming SSR and snippets.
 
 ## Documentation
 

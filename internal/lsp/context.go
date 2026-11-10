@@ -18,7 +18,7 @@ const (
 	inAttrName                    // between the attributes of a tag
 	inAttrText                    // a quoted static attribute value
 	inExpr                        // a {…} expression, in text or an attribute
-	inBlock                       // after {# {: or {/ of a block tag
+	inBlock                       // after {# {: {/ of a block tag, or {@ of {@html}
 )
 
 type cursorContext struct {
@@ -151,7 +151,7 @@ func scanTemplate(src string, start, off int) cursorContext {
 	}
 	switch {
 	case depth > 0:
-		if !exprInTag && exprStart+1 < len(src) && strings.IndexByte("#:/", src[exprStart+1]) >= 0 && !strings.ContainsAny(src[exprStart+1:off], " \t\n") {
+		if !exprInTag && exprStart+1 < len(src) && strings.IndexByte("#:/@", src[exprStart+1]) >= 0 && !strings.ContainsAny(src[exprStart+1:off], " \t\n") {
 			return cursorContext{kind: inBlock, wordStart: exprStart}
 		}
 		ws, _ := wordAt(src, off)

@@ -4,7 +4,7 @@
  * Structural template behaviour lives here once instead of being generated
  * into every component: compiled fragments build DOM through a cursor, and
  * blocks ($$if, $$each, $$key, $$await, $$component, $$dynamic, $$slot,
- * $$client, $$boundary, $$head) own
+ * $$client, $$boundary, $$head, $$html) own
  * their DOM ranges and child resources.
  *
  * Fragment contract (F-2.x): a fragment is `(cursor, scope) => handle`, where
@@ -180,9 +180,29 @@ function rangeContains(range, node) {
 // The create cursor builds new DOM (C-4.1). The hydrate cursor of task 041
 // implements the same interface over existing server DOM.
 
-export function $$template(html) {
+// Elements under <svg> and <math> are created in their namespace; ns is
+// 'svg' or 'math', given by the compiler (task 100).
+const namespaces = { svg: 'http://www.w3.org/2000/svg', math: 'http://www.w3.org/1998/Math/MathML' };
+
+// parseMarkup parses html into a fragment. Markup in a foreign namespace is
+// parsed inside its root element, so <circle> becomes an SVG element.
+function parseMarkup(html, ns) {
   const template = document.createElement('template');
-  template.innerHTML = html;
+  if (!ns) {
+    template.innerHTML = html;
+    return template.content;
+  }
+  template.innerHTML = `<${ns}>${html}</${ns}>`;
+  const root = template.content.firstChild;
+  const content = document.createDocumentFragment();
+  while (root.firstChild) content.appendChild(root.firstChild);
+  return content;
+}
+
+export function $$template(html, ns) {
+  const template = document.createElement('template');
+  if (ns) template.content.appendChild(parseMarkup(html, ns));
+  else template.innerHTML = html;
   return template;
 }
 
@@ -202,8 +222,8 @@ function createCursor(parent, before, owner, ctx) {
     },
     // element creates an element with its static attributes, given as a flat
     // [name, value, ...] list (the scope attribute comes first).
-    element(tag, attrs) {
-      const element = document.createElement(tag);
+    element(tag, attrs, ns) {
+      const element = ns ? document.createElementNS(namespaces[ns], tag) : document.createElement(tag);
       if (attrs) for (let i = 0; i < attrs.length; i += 2) element.setAttribute(attrs[i], attrs[i + 1]);
       return cursor.insert(element);
     },
@@ -1387,6 +1407,69 @@ export function $$client(cursor, main, fallback) {
     mounted = true;
   }
   return block;
+}
+
+// ── $$html ───────────────────────────────────────────────────────────────
+// {@html value} (task 100). The markup owns the nodes between two anchors;
+// null and undefined render nothing, any other value String(value). A
+// changed string replaces the nodes between the anchors, an unchanged one
+// does no DOM work. ns names the foreign namespace of the parent ('svg',
+// 'math') when the compiler knows it; otherwise the parent element at the
+// time of the write decides. The inserted markup is not sanitized.
+//
+// Hydration: the server range is <!--[h{hash}-->markup<!--]-->; the hydrate
+// cursor adopts the nodes without parsing the markup again (cursor.html).
+
+function htmlValue(value) {
+  return value == null ? '' : String(value);
+}
+
+function markupNamespace(ns, parent) {
+  if (ns || !parent || parent.nodeType !== 1) return ns;
+  if (parent.namespaceURI === namespaces.svg && parent.localName !== 'foreignObject') return 'svg';
+  if (parent.namespaceURI === namespaces.math) return 'math';
+  return ns;
+}
+
+function clearBetween(start, end) {
+  while (start.nextSibling && start.nextSibling !== end) start.nextSibling.remove();
+}
+
+export function $$html(cursor, value, ns, changed) {
+  let current = htmlValue(value());
+  let start;
+  let end;
+  const write = () => {
+    clearBetween(start, end);
+    if (current !== '') end.parentNode.insertBefore(parseMarkup(current, markupNamespace(ns, end.parentNode)), end);
+  };
+  if (cursor.hydrating) {
+    ({ start, end } = cursor.html(current, (server) => {
+      ({ start, end } = server);
+      write();
+    }));
+  } else {
+    start = cursor.comment();
+    end = cursor.comment();
+    write();
+  }
+  const block = {
+    p(dirty) {
+      if (block.isDone() || (changed && !changed(dirty))) return;
+      const next = htmlValue(value());
+      if (next === current) return;
+      current = next;
+      write();
+    },
+    move(before) {
+      moveRange({ start, end }, before);
+    },
+  };
+  return registerBlock(cursor, block, end, (removeDom) => {
+    if (!removeDom) return;
+    clearBetween(start, end);
+    start.remove();
+  });
 }
 
 // ── $$boundary ───────────────────────────────────────────────────────────

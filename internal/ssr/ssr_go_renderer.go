@@ -150,6 +150,8 @@ func (e *ssrGoEmitter) node(node SSRPlanNode) ([]goast.Stmt, error) {
 		return e.clientBlock(n)
 	case *SSRPlanBoundary:
 		return e.boundaryBlock(n)
+	case *SSRPlanHtml:
+		return e.htmlTag(n)
 	default:
 		return nil, ssrExprUnsupported(0, "SSR node %T is not lowered yet", node)
 	}
@@ -357,6 +359,18 @@ func (e *ssrGoEmitter) text(node *SSRPlanText) ([]goast.Stmt, error) {
 
 	}
 	return body, nil
+}
+
+// htmlTag writes {@html value} (task 100). The expression translates like a
+// text interpolation; vela.WriteHTMLTag writes the markup unescaped in its
+// hydration range.
+func (e *ssrGoEmitter) htmlTag(node *SSRPlanHtml) ([]goast.Stmt, error) {
+	value, err := e.translate("html", "", node.Expr, e.ctx)
+	if err != nil {
+		return nil, err
+	}
+	e.convertsOutput(node.Expr)
+	return []goast.Stmt{goWriteSSRErr(&goast.CallExpr{Fun: goSelector("vela", "WriteHTMLTag"), Args: []goast.Expr{goast.NewIdent("w"), value}})}, nil
 }
 
 func (e *ssrGoEmitter) element(node *SSRPlanElement) ([]goast.Stmt, error) {

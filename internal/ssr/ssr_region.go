@@ -115,6 +115,8 @@ func ssrSiteRoot(kind, name string) string {
 	switch kind {
 	case "text":
 		return "template text"
+	case "html":
+		return "{@html} markup"
 	case "await":
 		return "{#await} operand"
 	case "attribute":

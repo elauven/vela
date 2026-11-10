@@ -61,6 +61,30 @@ function htmlText(value) {
   return value.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '�');
 }
 
+// htmlHash is the hash of a {@html} string on its server marker (task 100):
+// 32-bit FNV-1a over the UTF-16 code units, in base 36. The Go renderer
+// computes the same value (ssr_runtime HTMLTag).
+function htmlHash(value) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+// serverMarkup writes the adopted server nodes of a {@html} range back as
+// markup, for the mismatch report.
+function serverMarkup(start, end) {
+  let html = '';
+  for (let node = start.nextSibling; node && node !== end; node = node.nextSibling) {
+    if (node.nodeType === 1) html += node.outerHTML;
+    else if (node.nodeType === 3) html += node.data.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    else if (node.nodeType === 8) html += `<!--${node.data}-->`;
+  }
+  return html;
+}
+
 // sameAttribute compares an attribute value before and after a client
 // write; style values are compared as declarations.
 function sameAttribute(name, before, after) {
@@ -191,6 +215,9 @@ function hydrateCursor(pos, owner, session, ctx) {
     // block from its server range with a create cursor.
     block(kind, ...args) {
       const site = session.take();
+      // The site of the block, for value checks of the block itself
+      // ({@html}).
+      session.blockSite = site;
       if (session.policy === 'fail') {
         try {
           return kind(cursor, ...args);
@@ -231,6 +258,33 @@ function hydrateCursor(pos, owner, session, ctx) {
         pos.next = after;
         return kind($$createCursor(pos.parent, after, owner, cursor.ctx), ...args);
       }
+    },
+    // html adopts the server range of {@html} (task 100) without parsing
+    // the markup again: <!--[h{hash}-->markup<!--]-->. The end marker must
+    // be a sibling of the start marker; markup the HTML parser rearranged
+    // (an unclosed <div>, a </p> that closes the parent) moves it, which is
+    // a structural mismatch. A hash that differs from the client value's is
+    // a value mismatch; repair(range) writes the client markup.
+    html(value, repair) {
+      const site = session.blockSite;
+      const start = pos.next;
+      cursor.expect(start && start.nodeType === 8 && start.data.startsWith('[h'), `expected a {@html} range, found ${describe(start)}`);
+      let end = null;
+      for (let node = start.nextSibling, depth = 0; node; node = node.nextSibling) {
+        if (node.nodeType !== 8) continue;
+        if (node.data.startsWith('[')) depth++;
+        else if (node.data === ']' && depth-- === 0) {
+          end = node;
+          break;
+        }
+      }
+      cursor.expect(end, 'the end of a {@html} range is not next to its start: the HTML parser moved it, the markup is not balanced or not allowed here');
+      pos.next = end.nextSibling;
+      if (session.verify && start.data.slice(2) !== htmlHash(htmlText(value))) {
+        const server = serverMarkup(start, end);
+        session.value(`{@html} markup is ${JSON.stringify(server)}, the client computes ${JSON.stringify(value)}`, () => repair({ start, end }), { site, server, client: value });
+      }
+      return { start, end };
     },
     // open consumes a range start marker and returns its state token.
     open() {

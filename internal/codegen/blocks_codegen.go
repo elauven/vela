@@ -51,6 +51,32 @@ type blocksState struct {
 	locals []blocksLocal
 	// sites is the hydration site table of development builds (V-11.3b).
 	sites []jsast.JsExpr
+	// ns is the foreign namespace of the current position, "svg" or
+	// "math", or "" for HTML (task 100).
+	ns string
+}
+
+// elementNamespace returns the namespace of an element with tag at a
+// position in namespace ns, and the namespace of its children.
+func elementNamespace(tag, ns string) (self, children string) {
+	switch {
+	case tag == "svg":
+		return "svg", "svg"
+	case tag == "math":
+		return "math", "math"
+	case ns == "svg" && tag == "foreignObject":
+		return "svg", ""
+	}
+	return ns, ns
+}
+
+// blocksNamespace is the namespace argument of a runtime call: null for
+// HTML.
+func (g *ASTGen) blocksNamespace() jsast.JsExpr {
+	if g.blocks.ns == "" {
+		return jsast.GenNull()
+	}
+	return jsast.GenStrLit(g.blocks.ns)
 }
 
 type blocksLocal struct {
@@ -353,7 +379,11 @@ func isElementNode(node sfcast.Node) bool {
 // blocksStatic clones a module-level template holding static nodes.
 func (g *ASTGen) blocksStatic(nodes []sfcast.Node) {
 	name := "$$tpl_" + g.name + "_" + strconv.Itoa(len(g.blocks.templates))
-	g.blocks.templates = append(g.blocks.templates, jsast.GenConst(name, jsast.GenCall(jsast.GenIdent("$$template"), jsast.GenStrLit(emitStaticHTML(nodes, g.elementScope)))))
+	args := []jsast.JsExpr{jsast.GenStrLit(emitStaticHTML(nodes, g.elementScope))}
+	if g.blocks.ns != "" {
+		args = append(args, jsast.GenStrLit(g.blocks.ns))
+	}
+	g.blocks.templates = append(g.blocks.templates, jsast.GenConst(name, jsast.GenCall(jsast.GenIdent("$$template"), args...)))
 	g.blocksEmit(jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "static"), jsast.GenIdent(name))))
 }
 
@@ -387,6 +417,8 @@ func (g *ASTGen) buildBlocksNode(node sfcast.Node, isRoot bool) {
 		g.buildBlocksComponent(n)
 	case *sfcast.SlotNode:
 		g.buildBlocksSlot(n)
+	case *sfcast.HtmlTagNode:
+		g.buildBlocksHtml(n)
 	default:
 		panic(fmt.Sprintf("vela: block engine cannot lower %T", node))
 	}
@@ -418,7 +450,17 @@ func (g *ASTGen) buildBlocksText(text *sfcast.TextNode) {
 	g.blocksUpdate(g.blocksGuard(exprs...), g.textWriteStmt(ref, text.Parts))
 }
 
+// buildBlocksHtml lowers {@html value} (task 100) to the $$html block.
+func (g *ASTGen) buildBlocksHtml(html *sfcast.HtmlTagNode) {
+	g.blocksSite(html.Expr)
+	g.blocksBlockCall("$$html", blocksArrow(nil, g.templateExpr(html.Expr)), g.blocksNamespace(), blocksChanged(g.blocksGuard(html.Expr)))
+}
+
 func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
+	outer := g.blocks.ns
+	ns, childNS := elementNamespace(el.Tag, outer)
+	g.blocks.ns = ns
+	defer func() { g.blocks.ns = outer }()
 	ref := g.blocks.next("$$e")
 	attrs := jsast.GenArray()
 	if g.elementScope != "" {
@@ -430,7 +472,11 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 		}
 		attrs.Elems = append(attrs.Elems, jsast.GenStrLit(attr.Name), jsast.GenStrLit(attr.Value))
 	}
-	g.blocksEmit(jsast.GenConst(ref, jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "element"), jsast.GenStrLit(el.Tag), attrs)))
+	create := []jsast.JsExpr{jsast.GenStrLit(el.Tag), attrs}
+	if ns != "" {
+		create = append(create, jsast.GenStrLit(ns))
+	}
+	g.blocksEmit(jsast.GenConst(ref, jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "element"), create...)))
 	if isRoot {
 		g.blocksEmit(jsast.GenAssignStmt(jsast.GenIdent("$$root"), jsast.GenIdent(ref)))
 	}
@@ -477,7 +523,9 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 			}
 		} else {
 			g.blocksEmit(jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "enter"), jsast.GenIdent(ref))))
+			g.blocks.ns = childNS
 			g.buildBlocksChildren(el.Children, false)
+			g.blocks.ns = ns
 			g.blocksEmit(jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "exit"))))
 		}
 	}

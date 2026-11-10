@@ -65,6 +65,7 @@ func TestVelaGrammar(t *testing.T) {
   {:catch failure, retry}
     <i>{failure.message}</i>
   {/boundary}
+  <article>{@html post.bodyHtml}</article>
 </template>
 
 <style>
@@ -99,6 +100,8 @@ func TestVelaGrammar(t *testing.T) {
 		{"each", "keyword.control.vela"},
 		{"boundary", "keyword.control.vela"},
 		{"failure", "meta.block.vela meta.embedded.expression.vela source.js"},
+		{"html", "keyword.control.vela"},
+		{"bodyHtml", "meta.html-tag.vela meta.embedded.expression.vela source.js"},
 		{"as", "keyword.control.vela"},
 		{"item", "meta.block.vela meta.embedded.expression.vela source.js"},
 		{"Card", "support.class.component.vela"},

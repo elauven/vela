@@ -245,6 +245,56 @@ inside `{...}` is part of the expression, not a tag:
 <span>{i < limit ? 'under' : 'over'}</span>
 ```
 
+### Raw HTML: `{@html}`
+
+`{@html expr}` inserts the string value of an expression as **markup**,
+for HTML that a CMS, a Markdown renderer or a syntax highlighter already
+produced:
+
+```
+<script>
+  export let post;
+</script>
+
+<template>
+  <article class="content">{@html post.bodyHtml}</article>
+</template>
+
+<style>
+  .content :global(pre) { overflow-x: auto; }
+</style>
+```
+
+- The value is converted with `String(value)`; `null` and `undefined`
+  render nothing.
+- **The markup is not sanitized.** A string that contains anything a user
+  wrote is a cross-site scripting hole: sanitize it first, on the server
+  (for example with [bluemonday](https://github.com/microcosm-cc/bluemonday)
+  in a Go host or loader) or in the browser (DOMPurify). Use `{expr}` for
+  text. `@govela/eslint-plugin` warns at every tag (`vela/no-at-html-tags`);
+  turn the rule off where the markup is trusted.
+- The inserted elements are not part of the component's template, so they
+  do not get its scope attribute: style them with `:global(...)` under an
+  element of the component, as above.
+- It stands wherever `{expr}` text stands in element content and blocks,
+  also inside `<svg>` (`<svg>{@html icon}</svg>` parses the markup as SVG).
+  It is not allowed in attribute values, in `<textarea>`, `<title>`,
+  `<script>` and `<style>`, or as the direct content of a named slot —
+  wrap it in an element there (`VELA-HTML-TAG-PLACEMENT`) — nor in
+  `<vela:head>`.
+- When the string changes, the nodes it inserted are replaced as a whole;
+  the same string does no DOM work. Write static markup in the template
+  itself instead of a literal `{@html '<b>…</b>'}`.
+- With `--ssr`, the Go renderer writes the markup unescaped; hydration
+  adopts those nodes without parsing the string again. Markup that the
+  HTML parser rearranges — an unclosed `<div>`, a `</p>` that closes the
+  surrounding paragraph — cannot be adopted and is reported as a
+  hydration mismatch, so send balanced markup.
+
+`{@const}`, `{@debug}` and `{@render}` are not supported
+(`VELA-UNSUPPORTED-TAG`): compute values with `$derived`, log them with
+`console.log` in an `$effect`, and pass markup through slots.
+
 ### Attributes
 
 Static attributes are plain HTML. `:name={expr}` makes an attribute
@@ -914,7 +964,9 @@ every selector, so styles never leak:
 </style>
 ```
 
-Only this component's `.msg` elements are affected.
+Only this component's `.msg` elements are affected. Markup inserted with
+`{@html}` has no scope attribute: reach it with `:global(...)` under one
+of the component's elements (`.content :global(p) { … }`).
 
 ### CSS delivery
 
@@ -985,6 +1037,7 @@ Scoping is identical either way.
 | `export let x = d` | prop with default `d` |
 | `export let x = $bindable(d)` | two-way prop |
 | `{expr}` | text interpolation |
+| `{@html expr}` | the string as markup, not sanitized (`:global(...)` styles it) |
 | `:attr={expr}` | dynamic attribute |
 | `@event={fn}` | event listener |
 | `bind:value={x}` | two-way form binding |

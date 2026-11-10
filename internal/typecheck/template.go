@@ -391,8 +391,14 @@ func writeTemplate(w *writer, start, end int) {
 			case "/if", "/each", "/await", "/key", "/client", "/boundary":
 				closeTo(keyword[1:])
 			}
+		case strings.HasPrefix(trimmed, "@html") && len(trimmed) > len("@html") && isSpaceByte(trimmed[len("@html")]):
+			// {@html markup} (task 100): any value.
+			at := r.start + strings.Index(content, trimmed) + len("@html")
+			w.gen("$$html(")
+			w.copyTrimmed(at, r.end)
+			w.gen(");\n")
 		case strings.HasPrefix(trimmed, "@"):
-			// {@html …} and other tags Vela does not support.
+			// Tags Vela does not support (VELA-UNSUPPORTED-TAG).
 		default:
 			w.gen("(")
 			w.copyTrimmed(r.start, r.end)

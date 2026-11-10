@@ -267,9 +267,13 @@ func eslintPluginPackageFiles() (map[string][]byte, error) {
 		"In TypeScript, typescript-eslint parses the virtual file of a `lang=\"ts\"`\n" +
 		"component (`**/*.vela/*.ts`). Type-aware rules cannot run on components:\n" +
 		"turn them off there with `tseslint.configs.disableTypeChecked`.\n\n" +
-		"`configs.recommended` sets the processor for `**/*.vela` and declares\n" +
-		"`$state`, `$derived`, `$effect`, `$bindable` and `$$dispatch`. The\n" +
-		"template markup is not linted. The compiler binary is the one of\n" +
+		"`configs.recommended` sets the processor for `**/*.vela`, declares\n" +
+		"`$state`, `$derived`, `$effect`, `$bindable` and `$$dispatch`, and warns\n" +
+		"with `vela/no-at-html-tags` at every `{@html …}`: the tag inserts markup\n" +
+		"without escaping, so a value from users must be sanitized first\n" +
+		"(bluemonday in Go, DOMPurify in the browser). Turn the rule off for a\n" +
+		"component whose markup you trust. The template markup is not linted.\n" +
+		"The compiler binary is the one of\n" +
 		"`" + CompilerPackageName + "` (or `VELA_BINARY`).\n\n" +
 		"License: MIT.\n"
 	return map[string][]byte{

@@ -1,0 +1,10 @@
+<script>
+  let price = $state(2);
+  let count = $state(3);
+</script>
+
+<template>
+  {@const total = price * count}
+  <p>{total}</p>
+  <button @click={() => count++}>+</button>
+</template>

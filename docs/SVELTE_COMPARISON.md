@@ -15,8 +15,8 @@ two differ. Svelte 5 reference: 5.x (2025). Vela status:
   Node). The compiler does not bundle; routing, loaders and navigation are
   the separate Vela App layer ([APP.md](APP.md)), with loaders in Go where
   SvelteKit has `load` in JavaScript.
-- **Not in Vela:** snippets, most `<svelte:*>` elements, and for now
-  `{@html}` (task 100) and event modifiers (task 101).
+- **Not in Vela:** snippets, most `<svelte:*>` elements, `{@const}`,
+  `{@debug}` and `{@render}`, and for now event modifiers (task 101).
 
 ## Reactivity
 
@@ -46,8 +46,8 @@ needed.
 | `class:` / `style:` directives | ✓ | ✓ |
 | Static `class` with dynamic `class` | `class={[…]}` arrays and objects | `class="a" :class={b}` joined; no object or array form |
 | `{#if}`, `{#each}` (keyed, `{:else}`), `{#await}`, `{#key}` | ✓ | ✓ |
-| `{@html}` | ✓ | — (planned, task 100) |
-| `{@const}`, `{@debug}`, `{@render}` | ✓ | — |
+| `{@html}` | ✓ | ✓ (not sanitized; also rendered by the Go server and adopted on hydration, where a server/client difference is a mismatch) |
+| `{@const}`, `{@debug}`, `{@render}` | ✓ | — (`VELA-UNSUPPORTED-TAG` names the replacement) |
 | Snippets | `{#snippet}` | — (use slots) |
 | Browser-only content | `{#if browser}` with `$app/environment` | `{#client}…{:else}…{/client}`, `<script context="client">` |
 

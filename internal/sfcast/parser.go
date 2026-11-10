@@ -350,6 +350,11 @@ type TemplateAST struct {
 type TemplateParseDiagnostic struct {
 	Pos     int
 	Message string
+	// Code and Help, when set, name the diagnostic of a syntax error with
+	// its own code (VELA-UNSUPPORTED-TAG, VELA-HTML-TAG-PLACEMENT); other
+	// syntax errors are VELA-TEMPLATE-SYNTAX.
+	Code string
+	Help string
 }
 
 func newTemplateAST(source string, offset int) *TemplateAST {
@@ -379,10 +384,12 @@ func newTemplateASTLang(source string, offset int, ts bool) *TemplateAST {
 	if err != nil {
 		pos := 0
 		var positioned *TemplateSyntaxError
+		code, help := "", ""
 		if errors.As(err, &positioned) {
 			pos = min(max(positioned.Pos, 0), len(source))
+			code, help = positioned.Code, positioned.Help
 		}
-		ast.Diagnostics = append(ast.Diagnostics, TemplateParseDiagnostic{Pos: pos, Message: err.Error()})
+		ast.Diagnostics = append(ast.Diagnostics, TemplateParseDiagnostic{Pos: pos, Message: err.Error(), Code: code, Help: help})
 	}
 	return ast
 }
@@ -519,6 +526,9 @@ func ValidateTemplateAST(ast *TemplateAST) []TemplateParseDiagnostic {
 			case *HeadNode:
 				checkSpan(n.Span, "head")
 				walkNodes(n.Children)
+			case *HtmlTagNode:
+				checkSpan(n.Span, "{@html} tag")
+				validateExpr(n.Expr, n.Pos, "{@html} tag")
 			case *BoundaryBlockNode:
 				checkSpan(n.Span, "boundary block")
 				walkNodes(n.Children)
@@ -891,6 +901,18 @@ type SlotNode struct {
 func (s *SlotNode) NodeKind() string      { return "slot" }
 func (e *EachBlockNode) NodeKind() string { return "eachblock" }
 
+// HtmlTagNode is {@html expression} (task 100): the string value of the
+// expression inserted as markup, without escaping or sanitizing. null and
+// undefined render nothing.
+type HtmlTagNode struct {
+	Span srcspan.SectionSpan
+	Expr *TemplateExpr
+	// Pos is the template offset of the expression.
+	Pos int
+}
+
+func (h *HtmlTagNode) NodeKind() string { return "htmltag" }
+
 type TextNode struct {
 	Span  srcspan.SectionSpan
 	Parts []*Part
@@ -1202,6 +1224,9 @@ func applyTemplateBlanks(src string, blanks []exprBlank) (string, bool) {
 type TemplateSyntaxError struct {
 	Pos int
 	Err error
+	// Code and Help give the error its own diagnostic code and fix.
+	Code string
+	Help string
 }
 
 func (e *TemplateSyntaxError) Error() string { return e.Err.Error() }
@@ -1281,6 +1306,17 @@ func (p *parser) parseNodeList(stopTags []string) ([]Node, error) {
 				}
 			}
 			return nodes, nil
+		}
+
+		// ── {@html …} and the unsupported {@…} tags (task 100) ───────────
+		if p.isAtTag() {
+			node, err := p.parseAtTag()
+			if err != nil {
+				return nil, err
+			}
+			separate()
+			nodes = append(nodes, node)
+			continue
 		}
 
 		// ── Svelte-style block directives {#…} {/…} {:…} ─────────────────
@@ -1371,7 +1407,7 @@ func (p *parser) parseText() (*TextNode, error) {
 		// handle them — but only at the top level, never mid-
 		// interpolation.
 		if braceDepth == 0 &&
-			(p.isSvelteBlockStart() || p.isSvelteBlockTerm()) {
+			(p.isSvelteBlockStart() || p.isSvelteBlockTerm() || p.isAtTag()) {
 			break
 		}
 		if c == '{' {
@@ -1927,6 +1963,9 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 				} else if idx := strings.LastIndex(p.src[start:p.pos], a.Name); idx >= 0 {
 					exprPos = start + idx
 				}
+				if err := atTagInAttribute(a, exprPos, elem.Tag); err != nil {
+					return err
+				}
 				if a.IsClassDir || a.IsStyleDir {
 					a.Expr = p.attributeTemplateExpr(a.Value, exprPos)
 				} else if a.ValueKind == AttrValueQuotedObjectCompat {
@@ -1957,6 +1996,44 @@ func (p *parser) parseAttrs(elem *ElementNode) error {
 		}
 	}
 	mergeStaticClass(elem)
+	return nil
+}
+
+// atTagInAttribute reports {@html …} or another {@…} tag in the value of a
+// dynamic attribute: raw HTML goes into element content only (task 100).
+func atTagInAttribute(a *Attr, exprPos int, tag string) error {
+	value := a.Value
+	for i := 0; i < len(value); i++ {
+		if value[i] != '{' {
+			continue
+		}
+		j := i + 1
+		for j < len(value) && isHTMLSpace(value[j]) {
+			j++
+		}
+		if j >= len(value) || value[j] != '@' {
+			continue
+		}
+		name := value[j+1:]
+		if k := strings.IndexFunc(name, func(r rune) bool { return !unicode.IsLetter(r) }); k >= 0 {
+			name = name[:k]
+		}
+		pos := exprPos
+		if !strings.HasPrefix(value, "{") {
+			pos += i
+		}
+		if name == "html" {
+			return &TemplateSyntaxError{Pos: pos, Code: "VELA-HTML-TAG-PLACEMENT",
+				Help: "Put {@html …} into the content of an element: <div>{@html markup}</div>.",
+				Err:  fmt.Errorf("{@html} is not allowed in an attribute value of <%s>", tag)}
+		}
+		help, ok := unsupportedTagHelp[name]
+		if !ok {
+			help = "Write the value as a JavaScript expression: :name={value}."
+		}
+		return &TemplateSyntaxError{Pos: pos, Code: "VELA-UNSUPPORTED-TAG", Help: help,
+			Err: fmt.Errorf("{@%s} is not supported in Vela", name)}
+	}
 	return nil
 }
 
@@ -2087,6 +2164,60 @@ func (p *parser) isSvelteBlockTerm() bool {
 		strings.HasPrefix(rest, "/await") ||
 		strings.HasPrefix(rest, "/client") ||
 		strings.HasPrefix(rest, "/boundary")
+}
+
+// isAtTag reports whether the parser is at a {@name …} tag. No JavaScript
+// expression starts with @, so `{ @html x }` is the tag too.
+func (p *parser) isAtTag() bool {
+	if p.pos >= len(p.src) || p.src[p.pos] != '{' {
+		return false
+	}
+	i := p.pos + 1
+	for i < len(p.src) && isHTMLSpace(p.src[i]) {
+		i++
+	}
+	return i < len(p.src) && p.src[i] == '@'
+}
+
+// unsupportedTagHelp is the Vela replacement of each Svelte {@…} tag that
+// Vela does not support.
+var unsupportedTagHelp = map[string]string{
+	"const":  "Compute the value in <script> with $derived: let total = $derived(price * count).",
+	"debug":  "Log the values with console.log in an $effect: $effect(() => console.log(value)).",
+	"render": "Use slots: <slot name=\"row\" /> in the child, slot=\"row\" content in the parent.",
+}
+
+// parseAtTag parses {@html expression}; any other {@name …} tag is a
+// VELA-UNSUPPORTED-TAG error (task 100).
+func (p *parser) parseAtTag() (Node, error) {
+	start := p.pos
+	inner := p.readSvelteTag()
+	if p.src[p.pos-1] != '}' {
+		return nil, &TemplateSyntaxError{Pos: start, Err: fmt.Errorf("{@ tag is not closed with }")}
+	}
+	body := inner[1:]
+	name := body
+	if i := strings.IndexFunc(body, unicode.IsSpace); i >= 0 {
+		name = body[:i]
+	}
+	rest := strings.TrimSpace(body[len(name):])
+	if name != "html" {
+		help, ok := unsupportedTagHelp[name]
+		if !ok {
+			help = "Vela supports {@html …} only; compute values in <script> and use slots for reusable markup."
+		}
+		return nil, &TemplateSyntaxError{Pos: start, Code: "VELA-UNSUPPORTED-TAG", Help: help,
+			Err: fmt.Errorf("{@%s} is not supported in Vela", name)}
+	}
+	if rest == "" {
+		return nil, &TemplateSyntaxError{Pos: start, Err: fmt.Errorf("{@html} needs an expression: {@html value}")}
+	}
+	exprPos := p.blockExprPos(start, inner, rest)
+	return &HtmlTagNode{
+		Span: srcspan.SectionSpan{Start: p.base + start, End: p.base + p.pos},
+		Expr: p.templateExpr(rest, exprPos),
+		Pos:  exprPos,
+	}, nil
 }
 
 // readSvelteTag reads from current '{' to the closing '}', returning the inner text.
@@ -2586,6 +2717,15 @@ func (p *parser) parseSvelteBlockBody() ([]Node, string, error) {
 		if p.isSvelteBlockTerm() {
 			term := p.readSvelteTag()
 			return nodes, term, nil
+		}
+
+		if p.isAtTag() {
+			node, err := p.parseAtTag()
+			if err != nil {
+				return nil, "", err
+			}
+			nodes = append(nodes, node)
+			continue
 		}
 
 		if p.isSvelteBlockStart() {

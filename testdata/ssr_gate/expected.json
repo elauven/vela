@@ -1560,6 +1560,47 @@
       }
     },
     {
+      "id": "html-content",
+      "role": "positive",
+      "root": "test_projects/corpus/html-content",
+      "src": "src",
+      "components": {
+        "Article.vela": {
+          "status": "ok",
+          "mode": "interactive",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "component-prop#1": "server-native",
+            "each#1": "server-native",
+            "each-key#1": "server-native",
+            "html#1": "server-native",
+            "html#2": "server-native",
+            "html#3": "server-native",
+            "if#1": "server-native",
+            "prop-default#1": "server-native",
+            "prop-default#2": "server-native",
+            "state#1": "server-native",
+            "state#2": "server-native",
+            "state#3": "server-native",
+            "text#1": "server-native",
+            "text#2": "server-native",
+            "text#3": "server-native"
+          }
+        },
+        "Snippet.vela": {
+          "status": "ok",
+          "mode": "static",
+          "render": "ok",
+          "browser": "pass",
+          "sites": {
+            "html#1": "server-native",
+            "prop-default#1": "server-native"
+          }
+        }
+      }
+    },
+    {
       "id": "deepseek-todo",
       "role": "negative",
       "root": "test_projects/deepseek-todo-vela",
@@ -1600,6 +1641,18 @@
         {
           "source": "TodoItem.vela",
           "code": "VELA-DYNAMIC-CLASS"
+        }
+      ]
+    },
+    {
+      "id": "unsupported-tags",
+      "role": "negative",
+      "root": "test_projects/corpus/unsupported-tags",
+      "src": "src",
+      "diagnostics": [
+        {
+          "source": "App.vela",
+          "code": "VELA-UNSUPPORTED-TAG"
         }
       ]
     }

@@ -247,6 +247,9 @@
           "include": "#block"
         },
         {
+          "include": "#html-tag"
+        },
+        {
           "include": "#expression"
         },
         {
@@ -290,6 +293,33 @@
           "match": "\\b(as|then|catch)\\b",
           "name": "keyword.control.vela"
         },
+        {
+          "include": "source.js"
+        }
+      ]
+    },
+    "html-tag": {
+      "begin": "(\\{)\\s*(@)(html)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.section.embedded.begin.vela"
+        },
+        "2": {
+          "name": "keyword.control.vela"
+        },
+        "3": {
+          "name": "keyword.control.vela"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.vela"
+        }
+      },
+      "name": "meta.html-tag.vela",
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
         {
           "include": "source.js"
         }

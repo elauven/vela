@@ -1,0 +1,15 @@
+<script lang="ts">
+  interface Post {
+    bodyHtml: string;
+    icon: string | null;
+  }
+
+  export let post: Post = { bodyHtml: '', icon: null };
+  let count = $state(0);
+</script>
+
+<template>
+  <article class="content">{@html post.bodyHtml}</article>
+  <svg>{@html post.icon}</svg>
+  <p>{@html count}</p>
+</template>

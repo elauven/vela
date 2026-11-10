@@ -1,0 +1,32 @@
+<script>
+  import { HtmlCard } from './HtmlCard.vela';
+
+  export let body = '<b>bold</b> text';
+  export let rows = [];
+  export let show = true;
+  export let icon = '<circle r="4"></circle>';
+  let k = $state(0);
+  let extra = $state('<em>one</em>');
+
+  function bump() {
+    k++;
+    extra = '<em>' + (k + 1) + '</em>';
+  }
+</script>
+
+<template>
+  <article class="content">
+    <p class="intro">Intro: {@html body} end</p>
+    <button class="bump" @click={bump}>bump</button>
+    {#if show}<section class="if">{@html extra}</section>{:else}{@html '<s>hidden</s>'}{/if}
+    <ul>
+      {#each rows as row (row.id)}<li>{@html row.html}</li>{/each}
+    </ul>
+    <div class="rows">{#each rows as row (row.id)}{@html row.html}{:else}<i>none</i>{/each}</div>
+    {#key k}<div class="key">{@html extra}</div>{/key}
+    {#boundary}<div class="boundary">{@html body}</div>{:catch error}<p>{error.message}</p>{/boundary}
+    <HtmlCard :title={'card'}>{@html body}<div slot="foot">{@html extra}</div></HtmlCard>
+    <svg class="icon" width="10" height="10">{@html icon}</svg>
+    <p class="empty">{@html null}|{@html undefined}|{@html 0}</p>
+  </article>
+</template>

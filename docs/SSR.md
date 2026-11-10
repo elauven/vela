@@ -59,7 +59,7 @@ Set the import path of the generated packages with `--ssr-module` or in
 ```
 
 A runtime of another contract version fails `go build` with
-`undefined: vela.ContractV7` instead of misbehaving.
+`undefined: vela.ContractV8` instead of misbehaving.
 
 ### Directory names
 
@@ -370,6 +370,19 @@ err := components.RenderPageContext(ctx, w, props, components.PageSlots{})
 
 A failing writer and a cancelled request still fail the render.
 
+### `{@html}`
+
+The expression of `{@html post.bodyHtml}` runs on the server like a text
+interpolation — a Markdown renderer the translator cannot convert becomes a
+host (`//vela:host renderMarkdown`) — and the renderer writes its markup
+unescaped, in a range `<!--[h{hash}-->…<!--]-->` that the browser adopts
+without parsing it again. Nothing is sanitized: sanitize user content in Go
+before it reaches the component, for example with bluemonday in the host or
+the loader. Send balanced markup: a string with an unclosed `<div>` or a
+`</p>` that closes the enclosing paragraph is rearranged by the HTML parser
+and reported as a hydration mismatch. A component whose only dynamic part
+is `{@html}` stays a static root.
+
 ## Text conversion
 
 Server text follows the client's conversion in each context:
@@ -377,6 +390,7 @@ Server text follows the client's conversion in each context:
 | Context | `null` | `undefined` / missing member | Arrays |
 | --- | --- | --- | --- |
 | `{value}` text | `null` | `undefined` | comma join |
+| `{@html value}` | empty | empty | comma join |
 | `:attribute={value}` | `"null"` | `"undefined"` | comma join |
 | Boolean attributes, `class:` conditions | falsy | falsy | truthy, including `[]` |
 | Template literal | `null` | `undefined` | JavaScript text conversion |

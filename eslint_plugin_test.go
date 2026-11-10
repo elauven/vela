@@ -158,6 +158,7 @@ func TestESLintPlugin(t *testing.T) {
   {#await items then value}
     <i>{value}</i>
   {/await}
+  <article>{@html shown}</article>
 </template>
 `
 	for name, src := range sources {
@@ -189,7 +190,14 @@ func TestESLintPlugin(t *testing.T) {
 
 	var got []string
 	for _, m := range results["src/Bad.vela"].Messages {
-		got = append(got, strings.Join([]string{m.RuleID, quoted.FindStringSubmatch(m.Message)[1], strconv.Itoa(m.Line), strconv.Itoa(m.Column)}, " "))
+		name := ""
+		if q := quoted.FindStringSubmatch(m.Message); q != nil {
+			name = q[1]
+		} else {
+			// vela/no-at-html-tags: the expression of {@html}.
+			name, _, _ = strings.Cut(sourceAt(sources["src/Bad.vela"], m.Line, m.Column), "}")
+		}
+		got = append(got, strings.Join([]string{m.RuleID, name, strconv.Itoa(m.Line), strconv.Itoa(m.Column)}, " "))
 	}
 	sort.Strings(got)
 	// prefer-const also applies to runes: `const items = $state([])` is
@@ -203,6 +211,7 @@ func TestESLintPlugin(t *testing.T) {
 		"prefer-const items 4 7",
 		"prefer-const shown 3 7",
 		"prefer-const unused 2 7",
+		"vela/no-at-html-tags shown 17 19",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("Bad.vela:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -221,7 +230,7 @@ func TestESLintPlugin(t *testing.T) {
 // TestDocumentCommand: `vela document` prints the virtual document with
 // segments in UTF-16 units that map copied text back to the component.
 func TestDocumentCommand(t *testing.T) {
-	src := "<script>\n  // é😀\n  let name = $state('x');\n</script>\n<template><p>{name}</p></template>\n"
+	src := "<script>\n  // é😀\n  let name = $state('x');\n</script>\n<template><p>{name}</p><div>{@html name}</div></template>\n"
 	path := filepath.Join(t.TempDir(), "A.vela")
 	writeTestFile(t, path, src)
 	var stdout, stderr strings.Builder
@@ -246,7 +255,11 @@ func TestDocumentCommand(t *testing.T) {
 			names++
 		}
 	}
-	if names == 0 || len(doc.Segments) < 2 {
+	// {@html} (task 100) is checked as a call of $$html.
+	if !strings.Contains(doc.Text, "$$html(name)") {
+		t.Errorf("no $$html(name) in\n%s", doc.Text)
+	}
+	if names < 2 || len(doc.Segments) < 2 {
 		t.Errorf("segments %v of\n%s", doc.Segments, doc.Text)
 	}
 }
