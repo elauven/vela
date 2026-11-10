@@ -12,8 +12,10 @@ the part SvelteKit and Nuxt play for their compilers, but the server is
 - for each navigation the server sends either data (JSON) for components the
   client already has, or the server HTML of the changed part (a fragment).
 
-Status: **experimental**: implemented by tasks 073–078 and released as
-`app/vX.Y.Z` with `@govela/app` and the `vela-app` binaries; installing,
+Status: **beta**: implemented by tasks 073–078, 087, 090–092, 094, 096
+and 097; the contract and the navigation protocol change only with a note
+in [RELEASING.md](RELEASING.md) and, for the wire format, a new protocol
+version (N-1). Released as `app/vX.Y.Z` with `@govela/app` and the `vela-app` binaries; installing,
 building and deploying are in [VELA_APP.md](VELA_APP.md). This page is the contract (task 073), approved on
 2026-11-03. The route scanner and the `vela-app` generator exist (task 074,
 see [Generator](#generator)), `app.New` serves documents that the
@@ -1098,11 +1100,14 @@ Approved together with the rest of this page on 2026-11-03:
    navigation asks the server like any other navigation. `X-Vela-Have`
    already skips unchanged levels, and the 30-second prefetch cache of 078
    covers the common "hover, then click" case. A history cache can be added
-   later without changing the protocol.
+   later without changing the protocol. *Superseded by task 097:* the
+   opt-in `historyCache` shows back and forward entries within `maxAge`
+   without a request, with protocol version 1 unchanged.
 
 ## Not included in v1
 
 Streaming and deferred data, mixed segments (`[a]-[b]`), layout resets
-(SvelteKit `+layout@`), i18n routing beyond `[[lang]]`, prerendering to
-static files, and endpoints other than loaders and actions (the user's own
+(SvelteKit `+layout@`), i18n routing beyond `[[lang]]`, a static export
+that needs no Go server (task 098; prerendered pages of L-8 are served by
+`app.New`), and endpoints other than loaders and actions (the user's own
 Go handlers cover APIs). Hot module replacement belongs to task 008.

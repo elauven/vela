@@ -178,6 +178,10 @@ every scenario and the tables: [bench/RESULTS.md](bench/RESULTS.md).
 | `{#if}` `{#each … (key)}` `{#await}` `{#key}` | Blocks |
 | `<slot>`, `<slot name="…">` | Slots |
 | `{#client}…{/client}` | Browser-only content in SSR |
+| `{#boundary}…{:catch error, retry}…{/boundary}` | Error boundary |
+| `use:tooltip={opts}`, `transition:fade`, `animate:flip` | Actions, transitions and animations |
+| `<vela:head>`, `<vela:window>`, `<vela:component :this={C}>` | Document head, window listeners, dynamic components |
+| `setContext` / `getContext` | Values passed down the component tree |
 
 The full syntax is in the [Guide](docs/GUIDE.md); differences from Svelte 5
 are in [SVELTE_COMPARISON.md](docs/SVELTE_COMPARISON.md).
@@ -185,11 +189,14 @@ are in [SVELTE_COMPARISON.md](docs/SVELTE_COMPARISON.md).
 ## Status
 
 Vela is in **beta**. The client compiler is stable for the features marked
-so in [FEATURES.md](docs/FEATURES.md). Server rendering and hydration are
-experimental: their contract may change before `v1`, and every change is
-checked against a corpus of real applications in Chromium
-([SSR_GATE.md](docs/SSR_GATE.md)). TypeScript is experimental: `<script lang="ts">`, `.ts` modules, `vela check --types`, declarations and route types ([TYPESCRIPT.md](docs/TYPESCRIPT.md)). Not included: transitions,
-snippets, a dev server with HMR, and streaming SSR.
+so in [FEATURES.md](docs/FEATURES.md). Server rendering and hydration and the
+Vela App layer are beta: complete for their documented scope, and their
+contract changes before `v1` only with a note in
+[RELEASING.md](docs/RELEASING.md) and a new runtime contract or protocol
+version; every change is checked against a corpus of real applications in
+Chromium ([SSR_GATE.md](docs/SSR_GATE.md)). TypeScript is experimental: `<script lang="ts">`, `.ts` modules, `vela check --types`, declarations and route types ([TYPESCRIPT.md](docs/TYPESCRIPT.md)). Not included yet:
+`{@html}` (task 100), event modifiers (task 101), HMR (task 008), a static
+export of Vela Apps (task 098), streaming SSR and snippets.
 
 ## Documentation
 
@@ -200,7 +207,7 @@ snippets, a dev server with HMR, and streaming SSR.
 | [AGENTS.md](AGENTS.md) | Authoring rules for people and AI agents |
 | [EDITORS.md](docs/EDITORS.md) | The language server `vela-lsp` and editor setup |
 | [SSR.md](docs/SSR.md) | Server rendering and hydration |
-| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (experimental: the contract, the `vela-app` generator, server documents, data and fragment navigation, form actions, `vela-app dev` and `vela-app build`) |
+| [APP.md](docs/APP.md) | Vela App: routes, Go loaders and partial navigation (beta: the contract, the `vela-app` generator, server documents, data and fragment navigation, form actions, guards, prerendering and caching, `vela-app dev` and `vela-app build`) |
 | [VELA_APP.md](docs/VELA_APP.md) | Working with `vela-app`: install, a new project, development, production build and deploy |
 | [SSR_TRANSLATION_CONTRACT.md](docs/SSR_TRANSLATION_CONTRACT.md) | JavaScript-to-Go rules and Go hosts ([ru](docs/SSR_TRANSLATION_CONTRACT.ru.md)) |
 | [SSR_TRANSLATION_MATRIX.md](docs/SSR_TRANSLATION_MATRIX.md) | Translation status per construct and built-in |
