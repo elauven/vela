@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -17,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/elauven/vela/app/internal/protocol"
@@ -70,17 +70,19 @@ type Config struct {
 // Handler serves a Vela App (docs/APP.md): it matches the URL, runs the
 // loaders of the chain and renders the generated app root in the document.
 type Handler struct {
-	routes   Routes
-	assets   *vite.Assets
-	shell    shell
-	build    string
-	tags     string
-	defaults Head
-	logger   *slog.Logger
-	dev      bool
-	maxBytes int
-	csrf     *http.CrossOriginProtection
-	onError  func(ctx context.Context, r *Request, err error) error
+	// renderSizes maps a route id to its last root render size.
+	renderSizes sync.Map
+	routes      Routes
+	assets      *vite.Assets
+	shell       shell
+	build       string
+	tags        string
+	defaults    Head
+	logger      *slog.Logger
+	dev         bool
+	maxBytes    int
+	csrf        *http.CrossOriginProtection
+	onError     func(ctx context.Context, r *Request, err error) error
 	// static holds the segment ids whose root mode is static in
 	// vela.manifest.json (R-9); nil without a manifest.
 	static map[string]bool
@@ -399,7 +401,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 	chain := make([]any, 0, o.rendered+1)
 	var preload []string
 	for i, l := range o.run.levels[:o.rendered] {
-		entry := map[string]any{"id": l.level.ID, "key": o.keys[i], "data": l.view}
+		entry := chainEntry{"id": l.level.ID, "key": o.keys[i], "data": l.view, entryDataJSON: l.data}
 		if len(l.level.Deps.Keys) > 0 {
 			entry["depends"] = l.level.Deps.Keys
 		}
@@ -427,7 +429,7 @@ func (h *Handler) writeDocument(w http.ResponseWriter, r *http.Request, o *outco
 		})
 		preload = append(preload, o.errorID)
 	}
-	body, err := h.document(h.renderContext(r, o), routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
+	body, err := h.document(h.renderContext(r, o), o.route.ID, routeProp(routeInfo(r, o)), chain, mergeHead(h.defaults, heads), preload)
 	if err != nil {
 		err = h.mapError(r.Context(), &Request{Params: o.params, Query: o.query, HTTP: r, Route: o.route.ID}, err)
 		var redirect *RedirectError
@@ -465,15 +467,7 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 	heads, header := o.collect()
 	segments := make([]protocol.Segment, 0, o.rendered-o.start+1)
 	for i, l := range o.run.levels[o.start:o.rendered] {
-		// Only a navigation sends the loader's JSON; a document renders the
-		// view and writes its own payload.
-		data, err := value.Marshal(l.result)
-		if err != nil {
-			h.logger.Error("vela app: loader result not JSON", "path", r.URL.Path, "route", o.route.ID, "err", err)
-			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
-			return
-		}
-		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Depends: l.level.Deps.Keys, Data: data})
+		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Depends: l.level.Deps.Keys, Data: l.data})
 	}
 	if o.segError != nil {
 		segments = append(segments, protocol.Segment{ID: o.errorID, Key: o.errorKey(), Error: o.segError})
@@ -621,10 +615,16 @@ func (h *Handler) renderContext(r *http.Request, o *outcome) context.Context {
 }
 
 // document renders the shell with the head and the app root (R-5).
-func (h *Handler) document(ctx context.Context, route map[string]any, chain []any, head mergedHead, preload []string) ([]byte, error) {
+func (h *Handler) document(ctx context.Context, routeID string, route map[string]any, chain []any, head mergedHead, preload []string) ([]byte, error) {
 	// The root renders first: the <vela:head> tags of its components join
-	// the head (task 091).
-	root := &limitedBuffer{max: h.maxBytes}
+	// the head (task 091). Its buffer comes from a pool and starts at the
+	// size of the route's last render, so a large page does not grow it
+	// copy by copy.
+	root := renderBuffers.Get().(*limitedBuffer)
+	defer releaseRenderBuffer(root)
+	root.max = h.maxBytes
+	hint := h.renderSize(routeID)
+	root.Grow(int(min(hint.Load(), int64(h.maxBytes))))
 	var components vela.Head
 	if err := h.routes.Root.Render(vela.WithHead(ctx, &components), root, RootProps{Route: route, Chain: chain}); err != nil {
 		return nil, err
@@ -632,7 +632,10 @@ func (h *Handler) document(ctx context.Context, route map[string]any, chain []an
 	if root.err != nil {
 		return nil, root.err
 	}
+	hint.Store(int64(root.Len()))
 	out := &limitedBuffer{max: h.maxBytes}
+	// The document is the root and a few kilobytes of head: one allocation.
+	out.Grow(root.Len() + len(h.shell.beforeHead) + len(h.shell.betweenHeadBody) + len(h.shell.afterBody) + len(h.tags) + 4096)
 	out.WriteString(h.shell.beforeHead)
 	out.WriteString(head.html(components.Tags()))
 	fmt.Fprintf(out, `<meta name="vela-build" content="%s">`, html.EscapeString(h.build))
@@ -696,7 +699,39 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *limitedBuffer) WriteString(s string) (int, error) {
-	return b.Write([]byte(s))
+	if b.err != nil {
+		return 0, b.err
+	}
+	if b.Len()+len(s) > b.max {
+		b.err = fmt.Errorf("app: the response is larger than MaxBytes (%d)", b.max)
+		return 0, b.err
+	}
+	return b.Buffer.WriteString(s)
+}
+
+// renderBuffers holds the buffers of root renders, which are copied into
+// the document and then free again.
+var renderBuffers = sync.Pool{New: func() any { return new(limitedBuffer) }}
+
+// maxPooledBuffer keeps an unusually large render from staying in the pool.
+const maxPooledBuffer = 8 << 20
+
+func releaseRenderBuffer(b *limitedBuffer) {
+	if b.Cap() > maxPooledBuffer {
+		return
+	}
+	b.Reset()
+	b.err = nil
+	renderBuffers.Put(b)
+}
+
+// renderSize is the size of the last root render of a route.
+func (h *Handler) renderSize(routeID string) *atomic.Int64 {
+	if v, ok := h.renderSizes.Load(routeID); ok {
+		return v.(*atomic.Int64)
+	}
+	v, _ := h.renderSizes.LoadOrStore(routeID, new(atomic.Int64))
+	return v.(*atomic.Int64)
 }
 
 func methodNotAllowed(w http.ResponseWriter) {
@@ -744,11 +779,7 @@ func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Rou
 	case errors.As(err, &redirect):
 		h.writeRedirect(w, r, isNav, redirect)
 	case errors.As(err, &fail):
-		view, verr := value.FromGo(fail.Value)
-		var raw json.RawMessage
-		if verr == nil && isNav {
-			raw, verr = value.Marshal(fail.Value)
-		}
+		view, raw, verr := value.FromGo(fail.Value)
 		if verr != nil {
 			h.answerAction(w, page, route, params, isNav, mode, loadOptions{failure: fmt.Errorf("app: the value of Fail: %w", verr)})
 			return

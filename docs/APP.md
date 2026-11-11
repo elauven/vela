@@ -220,12 +220,15 @@ server/routes/**                  internal/appgen/routes_gen.go
   error, and so is a wrong signature (the message prints the expected one).
   A component without a loader gets `data = null`.
 - **L-2** The result is any JSON-serialisable Go value. The server
-  marshals it with `encoding/json` and unmarshals it into `any`, so the
-  `data` prop is the same value on the server as the JSON the client
-  receives: objects, arrays, `float64` numbers, strings, booleans and
-  `null` (T-5.1 of [SSR_TRANSLATION_CONTRACT.md](SSR_TRANSLATION_CONTRACT.md)).
-  `time.Time` therefore arrives as an RFC 3339 string. A result that does
-  not marshal is a 500 error.
+  converts it as if it marshaled it with `encoding/json` and unmarshaled it
+  into `any` (the same rules, without the text in between), so the `data`
+  prop is the same value on the server as the JSON the client receives:
+  objects, arrays, `float64` numbers, strings, booleans and `null` (T-5.1
+  of [SSR_TRANSLATION_CONTRACT.md](SSR_TRANSLATION_CONTRACT.md)).
+  `time.Time` therefore arrives as an RFC 3339 string. The same pass
+  writes the JSON of that value, with sorted object keys, which the
+  hydration payload and navigation responses send. A result that does not
+  marshal is a 500 error.
 - **L-3** `*app.Request` gives a loader:
   - `r.Params` (`map[string]string`, the decoded parameters of P-6; an
     absent optional parameter has no entry);
@@ -808,7 +811,7 @@ A request:
    (`Level.Error`, the nearest at or above it) replaces it and the levels
    below it, as the last chain segment with `error: { status, message }`.
    Without an `Error.vela` the built-in error page answers.
-5. Loader results become props through `encoding/json` (L-2), and each
+5. Loader results become props by the rules of `encoding/json` (L-2), and each
    level gets its key (L-6). The `VelaApp` root is rendered with `route`,
    `chain` and `start: 0` into the shell: the merged head (R-6), the client
    tags, `<link rel="modulepreload">` and stylesheets of the lazy page or

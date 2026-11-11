@@ -12,6 +12,16 @@ import (
 	"unicode/utf8"
 )
 
+// PayloadAppender is a value that writes its own JSON into a hydration
+// payload: Vela App's route chain, whose loader results are encoded while
+// their views are built, so the payload does not encode them a second time.
+// appendValue writes any other value as the payload does. What it appends
+// must be the JSON appendJSON would write for the value: HTML-safe strings,
+// ECMAScript numbers, sorted object keys.
+type PayloadAppender interface {
+	AppendPayloadJSON(b []byte, appendValue func([]byte, any) ([]byte, error)) ([]byte, error)
+}
+
 // appendJSON appends the JSON text of value exactly as encoding/json writes
 // it (HTML-safe string escaping, ECMAScript number format, sorted map keys),
 // in one pass. Encoding *Object through json.Marshal was quadratic in the
@@ -108,6 +118,8 @@ func appendJSON(b []byte, value any) ([]byte, error) {
 		return append(b, '}'), nil
 	case json.RawMessage:
 		return appendCompactJSON(b, v)
+	case PayloadAppender:
+		return v.AppendPayloadJSON(b, appendJSON)
 	case json.Marshaler:
 		encoded, err := json.Marshal(value)
 		if err != nil {

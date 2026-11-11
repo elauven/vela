@@ -12,15 +12,17 @@ import (
 	"fmt"
 )
 
-// FromGo returns the JSON view of v without encoding it (view.go); Marshal
-// gives its encoding when a response needs it. A value that does not marshal
-// (a channel, a function, NaN, a cycle) is an error.
-func FromGo(v any) (any, error) {
-	out, err := view(v)
+// FromGo returns the JSON view of v and the JSON of that view, built in one
+// walk without encoding and decoding v (view.go). The JSON is the view as
+// the hydration payload writes it: HTML-safe strings and sorted object keys.
+// A value that does not marshal (a channel, a function, NaN, a cycle) is an
+// error.
+func FromGo(v any) (any, json.RawMessage, error) {
+	out, data, err := view(v)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errNotJSON, err)
+		return nil, nil, fmt.Errorf("%w: %w", errNotJSON, err)
 	}
-	return out, nil
+	return out, data, nil
 }
 
 // Marshal encodes v as the client receives it. HTML characters are not

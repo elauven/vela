@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 	"unsafe"
@@ -23,6 +24,11 @@ import (
 // text again: the result is the same (TestViewMatchesRoundTrip), without the
 // text in between. Only the values that encode themselves (json.Marshaler)
 // still go through JSON, because their encoding is all we know of them.
+//
+// The same walk writes the JSON of the view as the hydration payload writes
+// it (HTML-safe strings, encoding/json numbers, sorted object keys), so that
+// the document embeds it instead of encoding the view a second time
+// (TestViewJSONMatchesPayload).
 
 var (
 	marshalerType     = reflect.TypeFor[json.Marshaler]()
@@ -35,6 +41,7 @@ var (
 // the root to the value being converted.
 type viewState struct {
 	path map[cycleKey]struct{}
+	buf  []byte // the JSON of the view
 }
 
 type cycleKey struct {
@@ -42,9 +49,36 @@ type cycleKey struct {
 	len int
 }
 
-func view(v any) (any, error) {
-	var s viewState
-	return s.value(reflect.ValueOf(v))
+// view returns the view of v and its JSON. The buffer starts at the size of
+// the last JSON of the same type.
+func view(v any) (any, []byte, error) {
+	hint, _ := jsonSizes.LoadOrStore(reflect.TypeOf(v), new(atomic.Int64))
+	size := hint.(*atomic.Int64)
+	s := viewState{buf: make([]byte, 0, size.Load()+64)}
+	out, err := s.value(reflect.ValueOf(v))
+	if err != nil {
+		return nil, nil, err
+	}
+	size.Store(int64(len(s.buf)))
+	return out, s.buf, nil
+}
+
+// jsonSizes maps a result type to the length of its last JSON.
+var jsonSizes sync.Map
+
+// leaf writes the JSON of a view without objects or arrays inside, or of a
+// decoded json.Marshaler.
+func (s *viewState) leaf(x any, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	s.buf = appendView(s.buf, x)
+	return x, nil
+}
+
+func (s *viewState) null() (any, error) {
+	s.buf = append(s.buf, "null"...)
+	return nil, nil
 }
 
 func unsupported(t reflect.Type) error {
@@ -53,7 +87,7 @@ func unsupported(t reflect.Type) error {
 
 func (s *viewState) value(v reflect.Value) (any, error) {
 	if !v.IsValid() {
-		return nil, nil
+		return s.null()
 	}
 	return converterFor(v.Type())(s, v)
 }
@@ -99,29 +133,45 @@ func newConverter(t reflect.Type, allowAddr bool) converter {
 		return func(s *viewState, v reflect.Value) (any, error) { return s.marshaler(v) }
 	}
 	if t.Kind() != reflect.Pointer && allowAddr && reflect.PointerTo(t).Implements(textMarshalerType) {
-		return condAddr(func(s *viewState, v reflect.Value) (any, error) { return textView(v.Addr()) }, newConverter(t, false))
+		return condAddr(func(s *viewState, v reflect.Value) (any, error) { return s.leaf(textView(v.Addr())) }, newConverter(t, false))
 	}
 	if t.Kind() != reflect.Interface && t.Implements(textMarshalerType) {
-		return func(s *viewState, v reflect.Value) (any, error) { return textView(v) }
+		return func(s *viewState, v reflect.Value) (any, error) { return s.leaf(textView(v)) }
 	}
 	switch t.Kind() {
 	case reflect.Bool:
-		return func(s *viewState, v reflect.Value) (any, error) { return v.Bool(), nil }
+		return func(s *viewState, v reflect.Value) (any, error) {
+			b := v.Bool()
+			s.buf = strconv.AppendBool(s.buf, b)
+			return b, nil
+		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return func(s *viewState, v reflect.Value) (any, error) { return float64(v.Int()), nil }
+		return func(s *viewState, v reflect.Value) (any, error) {
+			f := float64(v.Int())
+			s.buf = appendFloat(s.buf, f)
+			return f, nil
+		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return func(s *viewState, v reflect.Value) (any, error) { return float64(v.Uint()), nil }
+		return func(s *viewState, v reflect.Value) (any, error) {
+			f := float64(v.Uint())
+			s.buf = appendFloat(s.buf, f)
+			return f, nil
+		}
 	case reflect.Float32, reflect.Float64:
-		return func(s *viewState, v reflect.Value) (any, error) { return floatView(v) }
+		return func(s *viewState, v reflect.Value) (any, error) { return s.leaf(floatView(v)) }
 	case reflect.String:
 		if t == numberType {
-			return func(s *viewState, v reflect.Value) (any, error) { return numberView(v.String()) }
+			return func(s *viewState, v reflect.Value) (any, error) { return s.leaf(numberView(v.String())) }
 		}
-		return func(s *viewState, v reflect.Value) (any, error) { return validString(v.String()), nil }
+		return func(s *viewState, v reflect.Value) (any, error) {
+			str := validString(v.String())
+			s.buf = appendString(s.buf, str)
+			return str, nil
+		}
 	case reflect.Interface:
 		return func(s *viewState, v reflect.Value) (any, error) {
 			if v.IsNil() {
-				return nil, nil
+				return s.null()
 			}
 			return s.value(v.Elem())
 		}
@@ -129,7 +179,7 @@ func newConverter(t reflect.Type, allowAddr bool) converter {
 		elem := t.Elem()
 		return func(s *viewState, v reflect.Value) (any, error) {
 			if v.IsNil() {
-				return nil, nil
+				return s.null()
 			}
 			key := cycleKey{ptr: v.UnsafePointer()}
 			if err := s.enter(key, v); err != nil {
@@ -146,15 +196,15 @@ func newConverter(t reflect.Type, allowAddr bool) converter {
 		if isBytes(t) {
 			return func(s *viewState, v reflect.Value) (any, error) {
 				if v.IsNil() {
-					return nil, nil
+					return s.null()
 				}
-				return base64.StdEncoding.EncodeToString(v.Bytes()), nil
+				return s.leaf(base64.StdEncoding.EncodeToString(v.Bytes()), nil)
 			}
 		}
 		elem := converterFor(t.Elem())
 		return func(s *viewState, v reflect.Value) (any, error) {
 			if v.IsNil() {
-				return nil, nil
+				return s.null()
 			}
 			key := cycleKey{ptr: v.UnsafePointer(), len: v.Len()}
 			if err := s.enter(key, v); err != nil {
@@ -207,13 +257,18 @@ func isBytes(t reflect.Type) bool {
 func (s *viewState) elements(v reflect.Value, elem converter) (any, error) {
 	n := v.Len()
 	out := make([]any, n)
+	s.buf = append(s.buf, '[')
 	for i := range n {
+		if i > 0 {
+			s.buf = append(s.buf, ',')
+		}
 		e, err := elem(s, v.Index(i))
 		if err != nil {
 			return nil, err
 		}
 		out[i] = e
 	}
+	s.buf = append(s.buf, ']')
 	return out, nil
 }
 
@@ -230,26 +285,49 @@ func mapConverter(t reflect.Type) converter {
 	elem := converterFor(t.Elem())
 	return func(s *viewState, v reflect.Value) (any, error) {
 		if v.IsNil() {
-			return nil, nil
+			return s.null()
 		}
 		key := cycleKey{ptr: v.UnsafePointer()}
 		if err := s.enter(key, v); err != nil {
 			return nil, err
 		}
 		defer s.leave(key)
-		out := make(map[string]any, v.Len())
+		// The JSON has the keys sorted, so the values are converted in
+		// that order. Keys that resolve to the same name keep the last.
+		type entry struct {
+			name  string
+			value reflect.Value
+		}
+		entries := make([]entry, 0, v.Len())
 		iter := v.MapRange()
 		for iter.Next() {
 			name, err := keyName(iter.Key())
 			if err != nil {
 				return nil, err
 			}
-			e, err := elem(s, iter.Value())
+			entries = append(entries, entry{name, iter.Value()})
+		}
+		slices.SortStableFunc(entries, func(a, b entry) int { return strings.Compare(a.name, b.name) })
+		out := make(map[string]any, len(entries))
+		s.buf = append(s.buf, '{')
+		first := true
+		for i, e := range entries {
+			if i+1 < len(entries) && entries[i+1].name == e.name {
+				continue
+			}
+			if !first {
+				s.buf = append(s.buf, ',')
+			}
+			first = false
+			s.buf = appendString(s.buf, e.name)
+			s.buf = append(s.buf, ':')
+			x, err := elem(s, e.value)
 			if err != nil {
 				return nil, err
 			}
-			out[name] = e
+			out[e.name] = x
 		}
+		s.buf = append(s.buf, '}')
 		return out, nil
 	}
 }
@@ -280,12 +358,17 @@ func structConverter(t reflect.Type) converter {
 	fields := typeFields(t)
 	for i := range fields {
 		f := &fields[i]
+		f.key = append(appendString(nil, f.name), ':')
 		if !f.quoted {
 			f.convert = converterFor(typeByIndex(t, f.index))
 		}
 	}
+	// The JSON writes the fields in the order of their names.
+	slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.name, b.name) })
 	return func(s *viewState, v reflect.Value) (any, error) {
 		out := make(map[string]any, len(fields))
+		s.buf = append(s.buf, '{')
+		first := true
 	next:
 		for i := range fields {
 			f := &fields[i]
@@ -305,12 +388,17 @@ func structConverter(t reflect.Type) converter {
 			if f.omitZero && (f.isZero == nil && fv.IsZero() || f.isZero != nil && f.isZero(fv)) {
 				continue
 			}
+			if !first {
+				s.buf = append(s.buf, ',')
+			}
+			first = false
+			s.buf = append(s.buf, f.key...)
 			var (
 				e   any
 				err error
 			)
 			if f.quoted {
-				e, err = quotedView(fv)
+				e, err = s.quoted(fv)
 			} else {
 				e, err = f.convert(s, fv)
 			}
@@ -319,6 +407,7 @@ func structConverter(t reflect.Type) converter {
 			}
 			out[f.name] = e
 		}
+		s.buf = append(s.buf, '}')
 		return out, nil
 	}
 }
@@ -336,11 +425,11 @@ func typeByIndex(t reflect.Type, index []int) reflect.Type {
 // marshaler converts a value that encodes itself: its JSON decoded again.
 func (s *viewState) marshaler(v reflect.Value) (any, error) {
 	if v.Kind() == reflect.Pointer && v.IsNil() {
-		return nil, nil
+		return s.null()
 	}
 	m, ok := v.Interface().(json.Marshaler)
 	if !ok {
-		return nil, nil
+		return s.null()
 	}
 	data, err := m.MarshalJSON()
 	if err != nil {
@@ -350,7 +439,7 @@ func (s *viewState) marshaler(v reflect.Value) (any, error) {
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, &json.MarshalerError{Type: v.Type(), Err: err}
 	}
-	return out, nil
+	return s.leaf(out, nil)
 }
 
 func textView(v reflect.Value) (any, error) {
@@ -391,21 +480,30 @@ func numberView(s string) (any, error) {
 	return f, nil
 }
 
-// quotedView is a field with the ",string" option: its JSON inside a
+// quoted converts a field with the ",string" option: its JSON inside a
 // string.
-func quotedView(v reflect.Value) (any, error) {
+func (s *viewState) quoted(v reflect.Value) (any, error) {
 	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
-			return nil, nil
+			return s.null()
 		}
 		v = v.Elem()
 	}
 	t := v.Type()
 	if t.Implements(marshalerType) || t.Implements(textMarshalerType) ||
 		v.CanAddr() && (reflect.PointerTo(t).Implements(marshalerType) || reflect.PointerTo(t).Implements(textMarshalerType)) {
-		var s viewState
 		return s.value(v)
 	}
+	str, err := quotedString(v)
+	if err != nil {
+		return nil, err
+	}
+	return s.leaf(str, nil)
+}
+
+// quotedString is the string of a primitive field with ",string".
+func quotedString(v reflect.Value) (string, error) {
+	t := v.Type()
 	switch v.Kind() {
 	case reflect.Bool:
 		return strconv.FormatBool(v.Bool()), nil
@@ -415,7 +513,7 @@ func quotedView(v reflect.Value) (any, error) {
 		return strconv.FormatUint(v.Uint(), 10), nil
 	case reflect.Float32, reflect.Float64:
 		if _, err := floatView(v); err != nil {
-			return nil, err
+			return "", err
 		}
 		return formatFloat(v.Float(), v.Type().Bits()), nil
 	case reflect.String:
@@ -425,18 +523,17 @@ func quotedView(v reflect.Value) (any, error) {
 				n = "0"
 			}
 			if !isValidNumber(n) {
-				return nil, fmt.Errorf("json: invalid number literal %q", n)
+				return "", fmt.Errorf("json: invalid number literal %q", n)
 			}
 			return n, nil
 		}
 		data, err := Marshal(v.String())
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		return string(data), nil
 	}
-	var s viewState
-	return s.value(v)
+	return "", unsupported(t)
 }
 
 // formatFloat formats f as encoding/json does.
@@ -545,6 +642,7 @@ type field struct {
 	isZero    func(reflect.Value) bool
 	quoted    bool
 	convert   converter
+	key       []byte // "name": in JSON
 }
 
 // typeFields lists the fields encoding/json encodes for the struct type t,
@@ -735,3 +833,124 @@ func isValidTag(s string) bool {
 }
 
 var errNotJSON = errors.New("value: the result is not JSON")
+
+// appendView appends the JSON of a view as the hydration payload writes it.
+func appendView(b []byte, x any) []byte {
+	switch v := x.(type) {
+	case nil:
+		return append(b, "null"...)
+	case bool:
+		return strconv.AppendBool(b, v)
+	case float64:
+		return appendFloat(b, v)
+	case string:
+		return appendString(b, v)
+	case []any:
+		b = append(b, '[')
+		for i, e := range v {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = appendView(b, e)
+		}
+		return append(b, ']')
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		b = append(b, '{')
+		for i, k := range keys {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = appendString(b, k)
+			b = append(b, ':')
+			b = appendView(b, v[k])
+		}
+		return append(b, '}')
+	}
+	panic(fmt.Sprintf("value: %T in a view", x))
+}
+
+// appendFloat formats a number as encoding/json does.
+func appendFloat(b []byte, f float64) []byte {
+	if f == math.Trunc(f) && f > -1<<53 && f < 1<<53 && (f != 0 || !math.Signbit(f)) {
+		return strconv.AppendInt(b, int64(f), 10)
+	}
+	abs := math.Abs(f)
+	format := byte('f')
+	if abs != 0 && (abs < 1e-6 || abs >= 1e21) {
+		format = 'e'
+	}
+	b = strconv.AppendFloat(b, f, format, -1, 64)
+	if format == 'e' {
+		// Clean up e-09 to e-9.
+		if n := len(b); n >= 4 && b[n-4] == 'e' && b[n-3] == '-' && b[n-2] == '0' {
+			b[n-2] = b[n-1]
+			b = b[:n-1]
+		}
+	}
+	return b
+}
+
+const hexDigits = "0123456789abcdef"
+
+// appendString appends s as a JSON string with encoding/json's HTML-safe
+// escaping.
+func appendString(b []byte, s string) []byte {
+	b = append(b, '"')
+	start := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if htmlSafe(c) {
+				i++
+				continue
+			}
+			b = append(b, s[start:i]...)
+			switch c {
+			case '\\', '"':
+				b = append(b, '\\', c)
+			case '\b':
+				b = append(b, '\\', 'b')
+			case '\f':
+				b = append(b, '\\', 'f')
+			case '\n':
+				b = append(b, '\\', 'n')
+			case '\r':
+				b = append(b, '\\', 'r')
+			case '\t':
+				b = append(b, '\\', 't')
+			default:
+				b = append(b, '\\', 'u', '0', '0', hexDigits[c>>4], hexDigits[c&0xF])
+			}
+			i++
+			start = i
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b = append(b, s[start:i]...)
+			b = append(b, `\ufffd`...)
+			i += size
+			start = i
+			continue
+		}
+		if r == '\u2028' || r == '\u2029' {
+			b = append(b, s[start:i]...)
+			b = append(b, '\\', 'u', '2', '0', '2', hexDigits[r&0xF])
+			i += size
+			start = i
+			continue
+		}
+		i += size
+	}
+	b = append(b, s[start:]...)
+	return append(b, '"')
+}
+
+func htmlSafe(c byte) bool {
+	return c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&'
+}

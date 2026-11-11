@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	vela "github.com/elauven/vela/ssr_runtime"
 )
 
 // roundTrip is the definition of the view: the value encoded and decoded
@@ -221,7 +223,7 @@ func TestViewMatchesRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("round trip %d: %v", i, err)
 			}
-			got, err := FromGo(v)
+			got, _, err := FromGo(v)
 			if err != nil {
 				t.Fatalf("view %d: %v", i, err)
 			}
@@ -230,6 +232,32 @@ func TestViewMatchesRoundTrip(t *testing.T) {
 				wj, _ := json.Marshal(want)
 				t.Fatalf("view %d of %T differs:\n got %s\nwant %s", i, v, gj, wj)
 			}
+		}
+	}
+}
+
+// The JSON that FromGo writes is the JSON the hydration payload would write
+// for the view, byte for byte.
+func TestViewJSONMatchesPayload(t *testing.T) {
+	r := rand.New(rand.NewPCG(3, 4))
+	values := []any{nil, true, -0.0, 1e21, 1e-7, 123.456, float32(0.1), int64(1<<53 + 1), uint64(math.MaxUint64),
+		"\x00\x1f\b\f\n\r\t\"\\</script>&\u2028\u2029\x7f é \xff", json.Number("-1.5E+3"), []byte("hi"),
+		map[string]any{"z": 1, "a": []any{map[string]int{"y": 2, "b": 3}}}, map[int]string{10: "x", 9: "y"}}
+	for range 50 {
+		m := sample(r)
+		values = append(values, m, &m, []mixed{m})
+	}
+	for _, v := range values {
+		got, data, err := FromGo(v)
+		if err != nil {
+			t.Fatalf("%T: %v", v, err)
+		}
+		want, err := vela.MarshalHydrationPayload(got)
+		if err != nil {
+			t.Fatalf("%T: payload: %v", v, err)
+		}
+		if string(data) != string(want) {
+			t.Fatalf("%T: JSON differs:\n got %s\nwant %s", v, data, want)
 		}
 	}
 }
@@ -244,7 +272,7 @@ func TestViewScalars(t *testing.T) {
 	}
 	for _, v := range values {
 		want, werr := roundTrip(v)
-		got, gerr := FromGo(v)
+		got, _, gerr := FromGo(v)
 		if (werr != nil) != (gerr != nil) {
 			t.Errorf("%T %#v: round trip error %v, view error %v", v, v, werr, gerr)
 			continue
@@ -284,14 +312,14 @@ func TestViewErrors(t *testing.T) {
 		if _, err := roundTrip(v); err == nil {
 			t.Errorf("%s: the round trip accepts it; the test is wrong", name)
 		}
-		_, err := FromGo(v)
+		_, _, err := FromGo(v)
 		if err == nil || !strings.Contains(err.Error(), "not JSON") {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
 	// A shared pointer that is not a cycle is fine.
 	shared := &inner{A: 1}
-	if _, err := FromGo([]*inner{shared, shared}); err != nil {
+	if _, _, err := FromGo([]*inner{shared, shared}); err != nil {
 		t.Errorf("shared pointer: %v", err)
 	}
 }
@@ -327,7 +355,7 @@ func BenchmarkFromGo(b *testing.B) {
 	v := benchData()
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := FromGo(v); err != nil {
+		if _, _, err := FromGo(v); err != nil {
 			b.Fatal(err)
 		}
 	}
