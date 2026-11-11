@@ -19,7 +19,7 @@ var _ = vela.ContractV8
 
 // Version is the version of the app layer. It is tagged app/vX.Y.Z and is
 // independent of the compiler version (docs/APP.md B-6).
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // RuntimeContract names the runtime contract the layer is written for
 // (docs/APP.md B-6); the package references ssr_runtime's marker of the

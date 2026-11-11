@@ -48,7 +48,7 @@ The Go packages import the runtime module
 that module, never the compiler:
 
 ```
-require github.com/elauven/vela/ssr_runtime v0.10.0
+require github.com/elauven/vela/ssr_runtime v0.11.0
 ```
 
 Set the import path of the generated packages with `--ssr-module` or in

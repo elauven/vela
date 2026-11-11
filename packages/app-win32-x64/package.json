@@ -1,6 +1,6 @@
 {
   "name": "@govela/app-win32-x64",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "The vela-app binary of Vela App for win32-x64. Installed by @govela/app; do not depend on it directly.",
   "license": "MIT",
   "repository": {
