@@ -1,4 +1,4 @@
-github.com/elauven/vela/ssr_runtime v0.9.0 h1:wBhS2JHSCi73z6aoj8RIzw+TDmgdN4ayA3OVa4L1zS4=
-github.com/elauven/vela/ssr_runtime v0.9.0/go.mod h1:Oed/dTG3TrjKWG0C/RIZVL6Y4gQoFT5vZXJZLZe6Wzg=
+github.com/elauven/vela/ssr_runtime v0.11.0 h1:92vRjoQlH0RunnS+AvKu7rPvcv+3bsbtLB0+vgLSMLE=
+github.com/elauven/vela/ssr_runtime v0.11.0/go.mod h1:Oed/dTG3TrjKWG0C/RIZVL6Y4gQoFT5vZXJZLZe6Wzg=
 golang.org/x/text v0.41.0 h1:vz/seA0lnX87Othu2f/0L24RcgrXD9/YFTSuGjj3rH8=
 golang.org/x/text v0.41.0/go.mod h1:jvf1O8ajNzZqhSrQBPbutR/EB83Cc0CFrezNQIwbb5M=

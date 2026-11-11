@@ -39,7 +39,7 @@ compiler. The example's `go.mod` requires the released version of the
 compiler it is built with:
 
 ```
-require github.com/elauven/vela/ssr_runtime v0.9.0
+require github.com/elauven/vela/ssr_runtime v0.11.0
 ```
 
 Every generated file references `vela.ContractV8`; a runtime of another
