@@ -8,6 +8,8 @@
   and `vela-lsp` completes it; `vela-lsp` completes and describes `<vela:head>`.
 - `{@html markup}` is highlighted as a tag with a JavaScript expression;
   `vela-lsp` completes and describes it.
+- Event modifiers (`@submit.prevent`, `@keydown.enter.exact`) are highlighted,
+  and `vela-lsp` completes them after `@event.`.
 - `@govela/typescript-plugin` is registered with VS Code's TypeScript: `.ts`
   modules that import components see their types.
 

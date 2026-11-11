@@ -1167,7 +1167,7 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 			reported[key] = true
 		}
 	}
-	checkAttrs := func(attrs []*sfcast.Attr) {
+	checkAttrs := func(attrs []*sfcast.Attr, component bool) {
 		seen := map[string]bool{}
 		for _, a := range attrs {
 			if a == nil {
@@ -1193,7 +1193,15 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 				}
 			}
 			if a.IsEvent && strings.Contains(a.Name, ".") {
-				ds.Report(diag.SevError, attrPos(a), attrEnd(a), "VELA-EVENT-MODIFIER", "Use @event with an explicit event.key check.", "event modifiers are not supported; use @%s with an explicit event.key check", strings.Split(a.Name, ".")[0])
+				// Event modifiers (task 101); a component event takes only .once.
+				event, modifiers := sfcast.SplitEventName(a.Name)
+				if _, problem := sfcast.ResolveEventModifiers(event, modifiers, component); problem != nil {
+					ds.Report(diag.SevError, attrPos(a), attrEnd(a), "VELA-EVENT-MODIFIER", problem.Help, "%s", problem.Message)
+				}
+			}
+			if !a.IsEvent && strings.HasPrefix(a.Name, "on:") && strings.Contains(a.Name, "|") {
+				// Svelte 4: on:click|preventDefault.
+				ds.Report(diag.SevError, attrPos(a), attrEnd(a), "VELA-EVENT-MODIFIER", "Write "+svelteEventForm(a.Name)+"={…}.", "%s is Svelte 4 syntax; Vela writes events as @event with .modifiers", a.Name)
 			}
 			if a.IsBind && strings.HasPrefix(a.Name, "class:") {
 				report(a, "VELA-DYNAMIC-CLASS", "Use class:name={condition}.", "%q is not a dynamic attribute; use class:%s={condition}", a.Name, strings.TrimPrefix(a.Name, "class:"))
@@ -1222,11 +1230,11 @@ func ValidateTemplateForms(nodes []sfcast.Node, templateText string, ds *diag.Di
 		for _, node := range ns {
 			switch n := node.(type) {
 			case *sfcast.ElementNode:
-				checkAttrs(n.Attrs)
+				checkAttrs(n.Attrs, false)
 				checkTransitions(n, animateRows[n], report)
 				walk(n.Children)
 			case *sfcast.ComponentNode:
-				checkAttrs(n.Attrs)
+				checkAttrs(n.Attrs, true)
 				for _, a := range n.Attrs {
 					if a == nil || !a.IsAction {
 						continue
@@ -1311,4 +1319,22 @@ func soleElement(nodes []sfcast.Node) *sfcast.ElementNode {
 		}
 	}
 	return found
+}
+
+// svelteEventForm writes a Svelte 4 on:event|modifier attribute name in the
+// Vela form, @event.modifier.
+func svelteEventForm(name string) string {
+	parts := strings.Split(strings.TrimPrefix(name, "on:"), "|")
+	names := map[string]string{"preventDefault": "prevent", "stopPropagation": "stop", "stopImmediatePropagation": "stop"}
+	out := "@" + parts[0]
+	for _, modifier := range parts[1:] {
+		if modifier == "nonpassive" {
+			continue
+		}
+		if vela, ok := names[modifier]; ok {
+			modifier = vela
+		}
+		out += "." + modifier
+	}
+	return out
 }

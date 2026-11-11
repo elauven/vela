@@ -74,6 +74,10 @@ try {
     },
     blur: (selector) => page.locator(selector).first().blur(),
     keydown: (selector, key) => page.locator(selector).first().press(key),
+    press: (selector, key) => page.locator(selector).first().press(key),
+    dispatch: (selector, type, kind, init) => page.locator(selector).first().evaluate((element, [eventType, eventClass, eventInit]) => {
+      element.dispatchEvent(new window[eventClass](eventType, { bubbles: true, cancelable: true, ...eventInit }));
+    }, [type, kind, init]),
     remount: () => page.evaluate(() => {
       window.__velaInstance?.destroy();
       document.body.replaceChildren();

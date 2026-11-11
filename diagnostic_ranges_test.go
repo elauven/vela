@@ -42,7 +42,7 @@ func TestDiagnosticRanges(t *testing.T) {
 </script>
 
 <template>
-  <button @click.prevent={inc} title="a {b}">{count} 🙂 {missing}</button>
+  <button @click.prevnt={inc} title="a {b}">{count} 🙂 {missing}</button>
 </template>
 `
 	svc := &CompilerService{Cwd: mustGetwd(t)}
@@ -52,7 +52,7 @@ func TestDiagnosticRanges(t *testing.T) {
 		"VELA-DERIVED-ARITY":         "$derived(count * 2, 1)",
 		"VELA-FLOW-UNREACHABLE":      "if (count) {\n      count++;\n    }",
 		"VELA-SCOPE-IMPLICIT-GLOBAL": "undeclaredName",
-		"VELA-EVENT-MODIFIER":        "@click.prevent={inc}",
+		"VELA-EVENT-MODIFIER":        "@click.prevnt={inc}",
 		"VELA-ATTR-BRACES":           `title="a {b}"`,
 		// After a character outside the BMP, columns count UTF-16 units.
 		"": "missing",

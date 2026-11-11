@@ -221,6 +221,17 @@ const adapter = {
     if ('value' in step) element.value = step.value;
     element.dispatchEvent(new window.Event('change', { bubbles: true, cancelable: true }));
   },
+  press: (selector, chord) => {
+    const element = fixtureTarget(selector, 'press');
+    const parts = String(chord).split('+');
+    const key = parts.pop();
+    const init = { key, bubbles: true, cancelable: true };
+    for (const part of parts) init[{ Control: 'ctrlKey', Shift: 'shiftKey', Alt: 'altKey', Meta: 'metaKey' }[part]] = true;
+    element.dispatchEvent(new window.KeyboardEvent('keydown', init));
+    element.dispatchEvent(new window.KeyboardEvent('keyup', init));
+  },
+  dispatch: (selector, type, kind, init) => fixtureTarget(selector, 'dispatch').dispatchEvent(
+    new window[kind](type, { bubbles: true, cancelable: true, ...init })),
   blur: (selector) => fixtureTarget(selector, 'blur').dispatchEvent(
     new window.FocusEvent('blur', { bubbles: false, cancelable: false })),
   keydown: (selector, key) => fixtureTarget(selector, 'keydown').dispatchEvent(

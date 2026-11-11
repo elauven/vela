@@ -489,7 +489,8 @@ func (g *ASTGen) buildBlocksElement(el *sfcast.ElementNode, isRoot bool) {
 		case attr.IsAction:
 			actions = append(actions, g.blocksAction(ref, attr))
 		case attr.IsEvent:
-			g.blocksEmit(g.blocksListen(ref, attr.Name, g.blocksEventHandler(attr)))
+			event, listener, options := g.blocksListener(attr)
+			g.blocksEmit(listenCall(jsast.GenIdent(ref), event, listener, options))
 		case attr.IsTwoWay || attr.IsBind:
 			writes = append(writes, g.blocksBinding(ref, el.Tag, attr)...)
 		case attr.IsBindThis:
@@ -574,7 +575,13 @@ func (g *ASTGen) blocksEventHandler(attr *sfcast.Attr) jsast.JsExpr {
 	if _, isIdent := TemplateExprIdent(attr.Expr); isIdent || templateExprIsHandler(attr.Expr) {
 		return handler
 	}
-	return blocksArrow([]jsast.JsExpr{jsast.GenIdent("$event")}, jsast.GenBlock(jsast.GenExprStmt(handler)))
+	// A statement handler (`@click={count++}`) writes state through its
+	// setter, as a component event handler does.
+	var stmt jsast.JsStmt = jsast.GenExprStmt(handler)
+	if g.analysis != nil {
+		stmt = analyzer.RewriteStatementAssignmentsAST(stmt, g.analysis.StateSet())
+	}
+	return blocksArrow([]jsast.JsExpr{jsast.GenIdent("$event")}, jsast.GenBlock(stmt))
 }
 
 // blocksBinding lowers bind:value / bind:checked and one-way :attr writes.
@@ -767,7 +774,7 @@ func (g *ASTGen) buildBlocksComponent(comp *sfcast.ComponentNode) {
 		if attr.IsEvent {
 			events.Props = append(events.Props, &jsast.JsProp{
 				BaseNode: jsast.GenNode(),
-				Key:      jsast.GenStrLit(strings.TrimPrefix(attr.Name, "on:")),
+				Key:      jsast.GenStrLit(strings.TrimPrefix(strings.SplitN(attr.Name, ".", 2)[0], "on:")),
 				Value:    g.blocksComponentEventHandler(attr),
 			})
 			continue
@@ -840,8 +847,15 @@ func (g *ASTGen) blocksComponentEventHandler(attr *sfcast.Attr) jsast.JsExpr {
 			return true
 		})
 	}
+	body := []jsast.JsStmt{invoke}
+	if _, modifiers := sfcast.SplitEventName(attr.Name); len(modifiers) > 0 {
+		// @on:name.once (task 101): the handler runs for the first event.
+		once := g.blocks.next("$$once")
+		g.blocksEmit(jsast.GenLet(once, jsast.GenBoolLit(false)))
+		body = []jsast.JsStmt{jsast.GenIf(jsast.GenIdent(once), jsast.GenReturn(nil)), jsast.GenAssignStmt(jsast.GenIdent(once), jsast.GenBoolLit(true)), invoke}
+	}
 	return blocksArrow([]jsast.JsExpr{jsast.GenIdent("$e")}, jsast.GenBlock(
-		jsast.GenIf(jsast.GenBinary("instanceof", jsast.GenIdent("$e"), jsast.GenIdent("CustomEvent")), jsast.GenBlock(invoke)),
+		jsast.GenIf(jsast.GenBinary("instanceof", jsast.GenIdent("$e"), jsast.GenIdent("CustomEvent")), jsast.GenBlock(body...)),
 	))
 }
 

@@ -1612,10 +1612,6 @@
         },
         {
           "source": "App.vela",
-          "code": "VELA-EVENT-MODIFIER"
-        },
-        {
-          "source": "App.vela",
           "code": "VELA-CLASS-OBJECT"
         },
         {

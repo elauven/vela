@@ -512,6 +512,17 @@ func TestCompletion(t *testing.T) {
 	if got := hoverText(t, c, uri, at(t, edited, "@html", 0, 2)); !strings.Contains(got, "without escaping") || !strings.Contains(got, "DOMPurify") {
 		t.Errorf("hover of {@html}: %q", got)
 	}
+
+	// Event modifiers (task 101): after @event. and after a modifier.
+	items, _ = complete(21, "<p>{count}</p>", "<input @keydown.|/>")
+	check("key modifiers", items, []string{"enter", "esc", "prevent", "ctrl", "exact"}, []string{"middle"})
+	items, _ = complete(22, "<p>{count}</p>", "<p @click.prevent.s|>x</p>")
+	check("click modifiers", items, []string{"stop", "self", "middle", "shift"}, []string{"enter"})
+	if item := items["stop"]; item.TextEdit == nil || item.TextEdit.NewText != "stop" {
+		t.Errorf("modifier edit %+v", item.TextEdit)
+	}
+	items, _ = complete(23, "    <p>{count}</p>", "    <Card @on:close.|/>")
+	check("component event modifiers", items, []string{"once"}, []string{"prevent"})
 }
 
 func keys(m map[string]CompletionItem) []string {

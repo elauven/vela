@@ -16,7 +16,7 @@ two differ. Svelte 5 reference: 5.x (2025). Vela status:
   the separate Vela App layer ([APP.md](APP.md)), with loaders in Go where
   SvelteKit has `load` in JavaScript.
 - **Not in Vela:** snippets, most `<svelte:*>` elements, `{@const}`,
-  `{@debug}` and `{@render}`, and for now event modifiers (task 101).
+  `{@debug}` and `{@render}`.
 
 ## Reactivity
 
@@ -41,7 +41,7 @@ needed.
 | Text | `{expr}` | `{expr}` |
 | Dynamic attribute | `href={url}` | `:href={url}` (`href={url}` accepted) |
 | DOM event | `onclick={fn}` | `@click={fn}` |
-| Event modifiers | — (Svelte 5 removed them) | — (`VELA-EVENT-MODIFIER`); planned as `@click.prevent`, `@keydown.enter` (task 101) |
+| Event modifiers | — (Svelte 5 removed them; Svelte 4 `on:click\|preventDefault`) | ✓ in Vue style: `@click.prevent`, `@keydown.enter.exact`, `@keydown.ctrl.k`, `@scroll.passive` |
 | Bindings | `bind:value`, `bind:checked`, `bind:this`, `bind:group`, … | `bind:value`, `bind:checked`, `bind:this` |
 | `class:` / `style:` directives | ✓ | ✓ |
 | Static `class` with dynamic `class` | `class={[…]}` arrays and objects | `class="a" :class={b}` joined; no object or array form |

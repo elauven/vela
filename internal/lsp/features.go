@@ -493,6 +493,16 @@ func (s *server) completion(doc *document, off int) any {
 		items = append(items, edit(ctx.wordStart, off, "vela:window", "vela:window @${1:resize}={${2}} />", KindKeyword, "listeners and read-only bindings on window, at the top level of the template"))
 		items = append(items, edit(ctx.wordStart, off, "vela:document", "vela:document @${1:visibilitychange}={${2}} />", KindKeyword, "listeners and read-only bindings on document, at the top level of the template"))
 	case inAttrName:
+		if typed := src[ctx.wordStart:off]; strings.HasPrefix(typed, "@") && strings.Contains(typed, ".") {
+			// Event modifiers (task 101) after @event.
+			dot := strings.LastIndexByte(typed, '.')
+			event, _ := sfcast.SplitEventName(typed[1:])
+			component := ctx.tag != "" && (ctx.tag[0] >= 'A' && ctx.tag[0] <= 'Z' || ctx.tag == "vela:component")
+			for _, name := range sfcast.EventModifierNames(strings.TrimPrefix(event, "on:"), component) {
+				items = append(items, edit(ctx.wordStart+dot+1, off, name, escapeSnippet(name), KindKeyword, "event modifier"))
+			}
+			break
+		}
 		if sfcast.IsGlobalTag(ctx.tag) {
 			for _, name := range sfcast.GlobalBindingNames(ctx.tag) {
 				items = append(items, edit(ctx.wordStart, off, "bind:"+name, "bind:"+name+"={${1}}", KindProperty, "read-only "+sfcast.GlobalBindings[ctx.tag][name].Type+", written into a $state after the mount"))

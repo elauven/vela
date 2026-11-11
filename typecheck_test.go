@@ -113,6 +113,8 @@ func TestCheckTypes(t *testing.T) {
 		{"src/Globals.vela", "TS2339", "event.code|code"},
 		{"src/Globals.vela", "TS2322", "bind:innerWidth={width}|width"},
 		{"src/Markup.vela", "TS2339", "post.bodyHtml|bodyHtml"},
+		{"src/Modifiers.vela", "TS2551", "event.keyz|keyz"},
+		{"src/Modifiers.vela", "TS2339", "event.buttonz|buttonz"},
 	}
 	for _, ts := range []string{"typescript-5.8", "typescript"} {
 		t.Run(ts, func(t *testing.T) {

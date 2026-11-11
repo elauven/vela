@@ -421,7 +421,8 @@ func writeAttr(w *writer, r templateRegion) {
 			if r.tag == sfcast.DocumentTag {
 				helper = "$$onDocument"
 			}
-			w.gen(helper + "(\"" + r.attr[1:] + "\", ")
+			// Modifiers (task 101) keep the event type of the event.
+			w.gen(helper + "(\"" + strings.SplitN(r.attr[1:], ".", 2)[0] + "\", ")
 			w.copyTrimmed(r.start, r.end)
 			w.gen(");\n")
 			return

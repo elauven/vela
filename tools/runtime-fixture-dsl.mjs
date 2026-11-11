@@ -7,7 +7,7 @@ const stepKeys = [
   'seedStorage', 'assertText', 'assertHTML', 'assertValue', 'assertStorage',
   'assertCount', 'assertFocused', 'assertStyle', 'assertGlobal', 'focus', 'click', 'dblclick',
   'submit', 'input', 'change', 'blur', 'keydown', 'remount', 'clickAndDestroy', 'tick',
-  'finishAnimations', 'reducedMotion', 'wait',
+  'finishAnimations', 'reducedMotion', 'wait', 'press', 'dispatch',
 ];
 
 function kindOf(step) {
@@ -135,6 +135,19 @@ export async function replayFixtureSteps(steps, adapter) {
           break;
         case 'keydown':
           await adapter.keydown(step.keydown, step.key ?? '');
+          await adapter.settle();
+          break;
+        // press types a key chord ("Control+k") at an element: trusted
+        // keydown and keyup in a browser, synthesized ones in jsdom.
+        case 'press':
+          await adapter.press(step.press, step.key ?? '');
+          await adapter.settle();
+          break;
+        // dispatch fires an untrusted event of a DOM event class with init
+        // ({ "dispatch": "button", "event": "mousedown", "class": "MouseEvent",
+        // "init": { "button": 1 } }); it bubbles and is cancelable.
+        case 'dispatch':
+          await adapter.dispatch(step.dispatch, step.event, step.class ?? 'Event', step.init ?? {});
           await adapter.settle();
           break;
         case 'remount':
