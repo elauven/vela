@@ -412,6 +412,9 @@
     "attributes": {
       "patterns": [
         {
+          "include": "#event-modifiers"
+        },
+        {
           "include": "#braced-attribute"
         },
         {
@@ -422,6 +425,38 @@
         },
         {
           "include": "#static-attribute"
+        }
+      ]
+    },
+    "event-modifiers": {
+      "begin": "(@)([A-Za-z_$][\\w:$-]*)((?:\\.[\\w-]+)+)\\s*(=)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.directive.vela"
+        },
+        "2": {
+          "name": "entity.other.attribute-name.html"
+        },
+        "3": {
+          "name": "keyword.other.modifier.vela"
+        },
+        "4": {
+          "name": "punctuation.separator.key-value.html"
+        },
+        "5": {
+          "name": "punctuation.section.embedded.begin.vela"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.vela"
+        }
+      },
+      "contentName": "meta.embedded.expression.vela source.js",
+      "patterns": [
+        {
+          "include": "source.js"
         }
       ]
     },

@@ -90,7 +90,7 @@ func TestVelaFormDiagnostics(t *testing.T) {
 	}{
 		{"derived callback", `let x = $state(1); let y = $derived(() => x + 1);`, `<p>{y}</p>`, "$derived does not accept a callback"},
 		{"dispatch import", `import { $$dispatch } from "vela";`, `<button>ok</button>`, "is a Vela builtin"},
-		{"event modifier", `let x = $state(0);`, `<button @keydown.enter={x++}>ok</button>`, "event modifiers are not supported"},
+		{"event modifier", `let x = $state(0);`, `<button @click.enter={x++}>ok</button>`, ".enter checks a key, which click events do not have"},
 		{"class map", `let x = $state(false);`, "<div :class=\"{'active': x}\"></div>", "object-valued :class is not supported"},
 		{"member bind", `let x = $state.deep({ ok: false });`, `<input bind:checked={x.ok}>`, "bind:checked requires a plain"},
 	}

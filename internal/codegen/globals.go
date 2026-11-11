@@ -22,7 +22,8 @@ func (g *ASTGen) buildBlocksGlobal(el *sfcast.ElementNode) {
 	for _, attr := range el.Attrs {
 		switch {
 		case attr.IsEvent:
-			g.blocksEmit(jsast.GenExprStmt(jsast.GenCall(jsast.GenMember(jsast.GenIdent("$$c"), "listen"), target, jsast.GenStrLit(attr.Name), g.blocksEventHandler(attr))))
+			event, listener, options := g.blocksListener(attr)
+			g.blocksEmit(listenCall(target, event, listener, options))
 		case attr.IsTwoWay:
 			name, _ := TemplateExprIdent(attr.Expr)
 			write := blocksArrow([]jsast.JsExpr{jsast.GenIdent("$$v")}, jsast.GenCall(jsast.GenIdent("$$set_"+name), jsast.GenIdent("$$v")))

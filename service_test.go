@@ -185,7 +185,7 @@ var serviceDiagnosticCorpus = map[string]string{
 	"template-syntax": "<template>\n{#await p then}<p>bad</p>{/await}\n</template>",
 	"js-syntax":       "<script>let x = ;</script>\n<template><p>x</p></template>",
 	"css-syntax":      "<template><p>x</p></template>\n<style>p { color: red; </style>",
-	"event-modifier":  "<script>function go() {}</script>\n<template><button @click.prevent={go}>go</button></template>",
+	"event-modifier":  "<script>function go() {}</script>\n<template><button @click.prevnt={go}>go</button></template>",
 	"duplicate-attr":  "<template><p title=\"a\" title=\"b\">x</p></template>",
 	"unknown-import":  "<script>import { nope } from 'vela';</script>\n<template><p>x</p></template>",
 	"unicode-column":  "<script>\n  const s = 'привет'; const w = window.innerWidth;\n</script>\n<template><p>{s}{w}</p></template>",

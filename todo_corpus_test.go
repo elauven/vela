@@ -38,7 +38,6 @@ func TestTodoCorpusCompilation(t *testing.T) {
 			src: "test_projects/deepseek-todo-vela/src/App.vela",
 			want: []expectedDiagnostic{
 				{"VELA-DERIVED-CALLBACK", "$derived does not accept a callback"},
-				{"VELA-EVENT-MODIFIER", "event modifiers are not supported"},
 				{"VELA-CLASS-OBJECT", "object-valued :class is not supported"},
 				{"VELA-BIND-MEMBER", "bind:checked requires a plain $state"},
 			},

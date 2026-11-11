@@ -52,7 +52,6 @@ as positive coverage.
 | Project | File | Diagnostic |
 | --- | --- | --- |
 | deepseek-todo | App.vela | VELA-DERIVED-CALLBACK |
-| deepseek-todo | App.vela | VELA-EVENT-MODIFIER |
 | deepseek-todo | App.vela | VELA-CLASS-OBJECT |
 | deepseek-todo | App.vela | VELA-BIND-MEMBER |
 | qwen-todo | App.vela | VELA-DYNAMIC-CLASS |
@@ -60,4 +59,4 @@ as positive coverage.
 | qwen-todo | TodoItem.vela | VELA-DYNAMIC-CLASS |
 | unsupported-tags | App.vela | VELA-UNSUPPORTED-TAG |
 
-Totals: 75 positive components in 12 projects (48 checked in the browser); 3 negative projects with 8 required diagnostics.
+Totals: 75 positive components in 12 projects (48 checked in the browser); 3 negative projects with 7 required diagnostics.

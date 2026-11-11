@@ -6,7 +6,7 @@ import (
 )
 
 func TestTemplateFormDiagnosticUsesRepeatedAttributePosition(t *testing.T) {
-	template := "<div><button @keydown.enter={first}>first</button><button @keydown.enter={second}>second</button></div>"
+	template := "<div><button @keydown.entr={first}>first</button><button @keydown.entr={second}>second</button></div>"
 	nodes, err := ParseTemplate(template)
 	if err != nil {
 		t.Fatal(err)

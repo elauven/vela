@@ -66,6 +66,7 @@ func TestVelaGrammar(t *testing.T) {
     <i>{failure.message}</i>
   {/boundary}
   <article>{@html post.bodyHtml}</article>
+  <form @submit.prevent={save}><input @keydown.enter.exact={send} /></form>
 </template>
 
 <style>
@@ -101,6 +102,10 @@ func TestVelaGrammar(t *testing.T) {
 		{"boundary", "keyword.control.vela"},
 		{"failure", "meta.block.vela meta.embedded.expression.vela source.js"},
 		{"html", "keyword.control.vela"},
+		{".prevent", "keyword.other.modifier.vela"},
+		{".enter.exact", "keyword.other.modifier.vela"},
+		{"submit", "entity.other.attribute-name.html"},
+		{"send", "meta.embedded.expression.vela source.js"},
 		{"bodyHtml", "meta.html-tag.vela meta.embedded.expression.vela source.js"},
 		{"as", "keyword.control.vela"},
 		{"item", "meta.block.vela meta.embedded.expression.vela source.js"},

@@ -1,0 +1,9 @@
+<script lang="ts">
+  let log = $state('');
+</script>
+
+<template>
+  <vela:window @keydown.ctrl.k={(event) => (log += event.key)} />
+  <input @keydown.enter.exact={(event) => (log += event.code)} />
+  <button @click.once.prevent={(event) => (log += event.button)}>{log}</button>
+</template>

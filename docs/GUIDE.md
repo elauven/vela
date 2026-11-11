@@ -335,7 +335,41 @@ Directives are special attributes with a prefix.
 <input @input={(e) => query = e.target.value} />
 ```
 
-The value is any expression evaluating to a function.
+The value is any expression evaluating to a function, or a statement such as
+`count++`.
+
+#### Modifiers
+
+Modifiers after the event name do the usual event handling for you:
+
+```
+<form @submit.prevent={save}>
+  <input bind:value={text} @keydown.enter.exact={send} @keydown.esc={cancel} />
+  <button @click.once={subscribe}>Subscribe</button>
+</form>
+<div class="overlay" @click.self={close}></div>
+<vela:window @keydown.ctrl.k={openSearch} />
+```
+
+| Modifier | Effect |
+| --- | --- |
+| `.prevent`, `.stop` | call `event.preventDefault()`, `event.stopPropagation()` |
+| `.self` | only when `event.target` is the element itself |
+| `.trusted` | only events of the user (`event.isTrusted`), not `dispatchEvent` |
+| `.once` | the handler runs for the first event that passes the other modifiers |
+| `.capture`, `.passive` | listener options; `.passive` cannot go with `.prevent` |
+| `.enter`, `.esc`, `.space`, `.tab`, `.delete` (Delete and Backspace), `.up`, `.down`, `.left`, `.right`, `.page-up`, `.page-down`, `.home`, `.end`, `.insert`, `.f1`–`.f12`, a letter or digit (`.k`, `.7`) | keyboard events: the key; several keys on one attribute are alternatives |
+| `.ctrl`, `.shift`, `.alt`, `.meta` | keyboard and mouse events: the system key is held |
+| `.exact` | no system key other than the listed ones (`@keydown.enter.exact` ignores Shift+Enter) |
+| `.left`, `.middle`, `.right` | mouse and pointer events: the button (on keyboard events `.left` and `.right` are arrow keys) |
+
+The checks run in the order written: `@click.prevent.self` prevents the
+default for clicks on children too, `@click.self.prevent` only for clicks on
+the element. They work on elements and on `<vela:window>` /
+`<vela:document>`; a component event takes only `.once`
+(`@on:close.once={…}`). An unknown modifier, a key on a non-keyboard event
+or `.passive.prevent` is `VELA-EVENT-MODIFIER` with the valid ones in the
+help. Svelte 4's `on:click|preventDefault` is written `@click.prevent`.
 
 ### `bind:` — two-way binding
 
@@ -1040,6 +1074,7 @@ Scoping is identical either way.
 | `{@html expr}` | the string as markup, not sanitized (`:global(...)` styles it) |
 | `:attr={expr}` | dynamic attribute |
 | `@event={fn}` | event listener |
+| `@event.prevent.stop.once={fn}` | event listener with modifiers |
 | `bind:value={x}` | two-way form binding |
 | `bind:this={x}` | element reference |
 | `class:name={cond}` | conditional class |
@@ -2003,7 +2038,7 @@ compile` or `vela serve --stdio`
 | Code | Cause | Canonical correction |
 | --- | --- | --- |
 | VELA-DERIVED-CALLBACK | &#36;derived was given a callback. | Use &#36;derived(expression), e.g. &#36;derived(items.length). |
-| VELA-EVENT-MODIFIER | Svelte event modifiers such as @keydown.enter are unsupported. | Use @keydown and explicitly check event.key. |
+| VELA-EVENT-MODIFIER | An unknown event modifier, a key modifier on a non-keyboard event, .passive with .prevent, a modifier given twice, a modifier other than .once on a component event, or Svelte's on:click\|preventDefault. | Use a modifier from the help, e.g. @keydown.enter or @click.prevent. |
 | VELA-DYNAMIC-CLASS | :class:name={...} was used. | Use class:name={condition}. |
 | VELA-CLASS-OBJECT | An object-valued :class binding was used. | Use one class:name={condition} directive per class. |
 | VELA-BIND-MEMBER | A two-way binding targets a member expression such as user.name. | Use a one-way binding and an explicit event handler. |

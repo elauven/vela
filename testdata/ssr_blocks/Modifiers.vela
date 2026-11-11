@@ -1,0 +1,25 @@
+<script>
+  export let start = '';
+  let log = $state('');
+  let mode = $state('a');
+  let pick = $derived(mode === 'a' ? () => add('A') : () => add('B'));
+
+  function add(name) {
+    log = log + name + ';';
+  }
+</script>
+
+<template>
+  <section class="modifiers">
+    <div class="outer" @click={() => add('outer')}>
+      <button class="stop" @click.stop={() => add('stop')}>stop</button>
+      <p class="self" @click.self={() => add('self')}><b class="child">child</b></p>
+      <a class="link" href="#x" @click.prevent={(e) => add('prevent:' + e.defaultPrevented)}>link</a>
+    </div>
+    <button class="once" @click.once={() => add('once')}>once</button>
+    <button class="mode" @click={() => (mode = mode === 'a' ? 'b' : 'a')}>{mode}</button>
+    <button class="pick" @click.once.capture={pick}>pick</button>
+    <button class="trusted" @click.trusted={() => add('trusted')}>trusted</button>
+    <p class="log">{start}{log}</p>
+  </section>
+</template>

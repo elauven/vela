@@ -110,6 +110,14 @@ each optional section, in any order:
   `name={expression}` shorthand in new code.
 - Use `@event={handler}` for DOM event listeners. Do not use `onclick=` or
   Svelte 4 `on:event=` syntax.
+- Prefer modifiers to boilerplate in the handler: `@submit.prevent={save}`,
+  `@click.stop`, `@click.self`, `@click.once`, `@scroll.passive`,
+  `@keydown.enter`, `@keydown.esc`, `@keydown.ctrl.k`,
+  `@keydown.enter.exact` (no other system key). Keys (`.enter`, `.esc`,
+  `.space`, `.tab`, `.delete`, arrows, a letter or digit) only on keyboard
+  events, buttons (`.left`, `.middle`, `.right`) on mouse events, and never
+  `.passive` with `.prevent`. The checks run in the order written. A
+  component event takes only `.once` (`@on:close.once`).
 - Use `bind:value`, `bind:checked`, and `bind:this` only when data must flow
   from the DOM back into component state. Use `:value={value}` for one-way DOM
   writes.
@@ -376,9 +384,9 @@ Do not generate or rely on the following in Vela applications:
   `<vela:window>` and `<vela:document>`), `<svelte:element>`,
   `<svelte:self>`, or `<svelte:body>`.
 - `bind:group`, `bind:files`, dimension bindings, or `bind:innerHTML`.
-- `{@const}`, `{@debug}` (`VELA-UNSUPPORTED-TAG`: use `$derived` and
-  `console.log` in an `$effect`), or event modifiers such as
-  `@click.prevent` (call `event.preventDefault()` in the handler).
+- `{@const}` or `{@debug}` (`VELA-UNSUPPORTED-TAG`: use `$derived` and
+  `console.log` in an `$effect`), or Svelte 4 event modifiers such as
+  `on:click|preventDefault` (write `@click.prevent`).
 - Streaming SSR, islands or partial hydration, CSS source maps, or HMR.
   JavaScript source maps (`--sourcemap`) cannot be combined with `--minify`.
   `--watch` recompiles files but does not preserve component state in the
