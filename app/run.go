@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -30,9 +29,8 @@ type levelRun struct {
 	// blocked: a level below a stopped one (a guard, G-2); it never runs.
 	blocked bool
 	done    chan struct{}
-	result  any             // the loader's result
-	view    any             // its JSON view (L-2)
-	data    json.RawMessage // its JSON
+	result  any // the loader's result
+	view    any // its JSON view (L-2)
 	err     error
 }
 
@@ -80,7 +78,7 @@ func (c *chainRun) start(i int) {
 				return
 			}
 			l.result = result
-			l.view, l.data, l.err = value.FromGo(result)
+			l.view, l.err = value.FromGo(result)
 		}()
 	})
 }

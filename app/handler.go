@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -464,7 +465,15 @@ func (h *Handler) writeData(w http.ResponseWriter, r *http.Request, o *outcome, 
 	heads, header := o.collect()
 	segments := make([]protocol.Segment, 0, o.rendered-o.start+1)
 	for i, l := range o.run.levels[o.start:o.rendered] {
-		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Depends: l.level.Deps.Keys, Data: l.data})
+		// Only a navigation sends the loader's JSON; a document renders the
+		// view and writes its own payload.
+		data, err := value.Marshal(l.result)
+		if err != nil {
+			h.logger.Error("vela app: loader result not JSON", "path", r.URL.Path, "route", o.route.ID, "err", err)
+			h.writeJSON(w, r, nil, protocol.Response{Type: protocol.TypeReload, Reason: protocol.ReasonDocument})
+			return
+		}
+		segments = append(segments, protocol.Segment{ID: l.level.ID, Key: o.keys[o.start+i], Depends: l.level.Deps.Keys, Data: data})
 	}
 	if o.segError != nil {
 		segments = append(segments, protocol.Segment{ID: o.errorID, Key: o.errorKey(), Error: o.segError})
@@ -735,7 +744,11 @@ func (h *Handler) serveAction(w http.ResponseWriter, r *http.Request, route *Rou
 	case errors.As(err, &redirect):
 		h.writeRedirect(w, r, isNav, redirect)
 	case errors.As(err, &fail):
-		view, raw, verr := value.FromGo(fail.Value)
+		view, verr := value.FromGo(fail.Value)
+		var raw json.RawMessage
+		if verr == nil && isNav {
+			raw, verr = value.Marshal(fail.Value)
+		}
 		if verr != nil {
 			h.answerAction(w, page, route, params, isNav, mode, loadOptions{failure: fmt.Errorf("app: the value of Fail: %w", verr)})
 			return

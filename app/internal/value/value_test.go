@@ -40,7 +40,8 @@ func TestFromGo(t *testing.T) {
 		{"nested", map[string]any{"a": []any{map[string]int{"b": 2}, nil}}, map[string]any{"a": []any{map[string]any{"b": 2.0}, nil}}, `{"a":[{"b":2},null]}`},
 		{"map with int keys", map[int]string{2: "b", 1: "a"}, map[string]any{"1": "a", "2": "b"}, `{"1":"a","2":"b"}`},
 	} {
-		got, data, err := FromGo(tc.in)
+		got, err := FromGo(tc.in)
+		data, _ := Marshal(tc.in)
 		if err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 			continue
@@ -53,14 +54,14 @@ func TestFromGo(t *testing.T) {
 		}
 	}
 	for _, bad := range []any{math.NaN(), make(chan int), func() {}, map[string]any{"x": math.Inf(1)}} {
-		if _, _, err := FromGo(bad); err == nil || !strings.Contains(err.Error(), "not JSON") {
+		if _, err := FromGo(bad); err == nil || !strings.Contains(err.Error(), "not JSON") {
 			t.Errorf("%T: %v", bad, err)
 		}
 	}
 }
 
 func TestInto(t *testing.T) {
-	view, _, _ := FromGo(user{ID: 7, Name: "Grace"})
+	view, _ := FromGo(user{ID: 7, Name: "Grace"})
 	got, err := Into[user](view)
 	if err != nil || got.ID != 7 || got.Name != "Grace" {
 		t.Errorf("Into: %+v %v", got, err)
