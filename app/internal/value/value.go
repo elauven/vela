@@ -1,9 +1,9 @@
 // Package value converts loader results to the values the generated
-// renderers receive as props (docs/APP.md L-2). A result goes through
-// encoding/json and back into any, so the server renders exactly what the
-// client receives in JSON: maps, slices, float64 numbers, strings, booleans
-// and nil (docs/SSR_TRANSLATION_CONTRACT.md T-5.1). time.Time becomes its
-// RFC 3339 string.
+// renderers receive as props (docs/APP.md L-2). The view is what
+// encoding/json and back into any would give, so the server renders exactly
+// what the client receives in JSON: maps, slices, float64 numbers, strings,
+// booleans and nil (docs/SSR_TRANSLATION_CONTRACT.md T-5.1). time.Time
+// becomes its RFC 3339 string.
 package value
 
 import (
@@ -12,16 +12,15 @@ import (
 	"fmt"
 )
 
-// FromGo returns the JSON view of v and its encoding. A value that does not
-// marshal (a channel, a function, NaN) is an error.
+// FromGo returns the JSON view of v and the JSON of that view, built in one
+// walk without encoding and decoding v (view.go). The JSON is the view as
+// the hydration payload writes it: HTML-safe strings and sorted object keys.
+// A value that does not marshal (a channel, a function, NaN, a cycle) is an
+// error.
 func FromGo(v any) (any, json.RawMessage, error) {
-	data, err := Marshal(v)
+	out, data, err := view(v)
 	if err != nil {
-		return nil, nil, err
-	}
-	var out any
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, nil, fmt.Errorf("value: %w", err)
+		return nil, nil, fmt.Errorf("%w: %w", errNotJSON, err)
 	}
 	return out, data, nil
 }

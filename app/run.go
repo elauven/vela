@@ -32,7 +32,7 @@ type levelRun struct {
 	done    chan struct{}
 	result  any             // the loader's result
 	view    any             // its JSON view (L-2)
-	data    json.RawMessage // its JSON
+	data    json.RawMessage // the JSON of the view
 	err     error
 }
 

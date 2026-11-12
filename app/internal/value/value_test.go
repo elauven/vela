@@ -40,7 +40,8 @@ func TestFromGo(t *testing.T) {
 		{"nested", map[string]any{"a": []any{map[string]int{"b": 2}, nil}}, map[string]any{"a": []any{map[string]any{"b": 2.0}, nil}}, `{"a":[{"b":2},null]}`},
 		{"map with int keys", map[int]string{2: "b", 1: "a"}, map[string]any{"1": "a", "2": "b"}, `{"1":"a","2":"b"}`},
 	} {
-		got, data, err := FromGo(tc.in)
+		got, _, err := FromGo(tc.in)
+		data, _ := Marshal(tc.in)
 		if err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 			continue
