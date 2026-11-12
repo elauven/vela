@@ -54,6 +54,9 @@ type blocksState struct {
 	// ns is the foreign namespace of the current position, "svg" or
 	// "math", or "" for HTML (task 100).
 	ns string
+	// unread are the optional scope locals that the last fragment built
+	// does not read (task 102).
+	unread map[string]bool
 }
 
 // elementNamespace returns the namespace of an element with tag at a
@@ -83,6 +86,9 @@ type blocksLocal struct {
 	name    string // local variable in the fragment
 	source  string // field of the scope object $$s it comes from
 	mutable bool   // refreshed when the owning block reuses the fragment
+	// optional locals are left out of a fragment that does not read them
+	// (the index of an #each row, task 102).
+	optional bool
 }
 
 // blocksFragment is one generated fragment function.
@@ -264,17 +270,51 @@ func (g *ASTGen) buildBlocksFragment(nodes []sfcast.Node, scopeLocals []blocksLo
 	parentFrag := g.blocks.frag
 	parentLocals := len(g.blocks.locals)
 	g.blocks.frag = frag
+	g.blocks.locals = append(g.blocks.locals, scopeLocals...)
+	g.buildBlocksChildren(nodes, name == rootFragmentName && g.blocks.assignRoot)
+	g.blocks.frag = parentFrag
+	g.blocks.locals = g.blocks.locals[:parentLocals]
+	unread := frag.unreadLocals(scopeLocals)
+	var kept []blocksLocal
 	for _, local := range scopeLocals {
-		g.blocks.locals = append(g.blocks.locals, local)
+		if unread[local.name] {
+			continue
+		}
+		kept = append(kept, local)
 		frag.scope = append(frag.scope, jsast.GenLet(local.name, jsast.GenMember(jsast.GenIdent("$$s"), local.source)))
 		if local.mutable {
 			frag.locals = append(frag.locals, local.name)
 		}
 	}
-	g.buildBlocksChildren(nodes, name == rootFragmentName && g.blocks.assignRoot)
-	g.blocks.frag = parentFrag
-	g.blocks.locals = g.blocks.locals[:parentLocals]
-	return frag.decl(scopeLocals)
+	g.blocks.unread = unread
+	return frag.decl(kept)
+}
+
+// unreadLocals returns the optional scope locals that no statement of the
+// fragment references. Like every reference walk, a shadowing declaration
+// counts as a read, which only keeps the local.
+func (f *blocksFragment) unreadLocals(scopeLocals []blocksLocal) map[string]bool {
+	unread := map[string]bool{}
+	for _, local := range scopeLocals {
+		if local.optional {
+			unread[local.name] = true
+		}
+	}
+	if len(unread) == 0 {
+		return unread
+	}
+	visit := func(node jsast.JsNode) bool {
+		if ident, ok := node.(*jsast.JsIdent); ok {
+			delete(unread, ident.Name)
+		}
+		return len(unread) > 0
+	}
+	for _, list := range [][]jsast.JsStmt{f.nested, f.body, f.updates} {
+		for _, stmt := range list {
+			jsast.WalkNode(stmt, visit)
+		}
+	}
+	return unread
 }
 
 // decl prints the fragment as a function declaration.
@@ -704,8 +744,10 @@ func (g *ASTGen) buildBlocksEach(each *sfcast.EachBlockNode) {
 	if index == "" {
 		index = "$$index"
 	}
-	locals := []blocksLocal{{name: each.ItemName, source: "item", mutable: true}, {name: index, source: "index", mutable: true}}
+	locals := []blocksLocal{{name: each.ItemName, source: "item", mutable: true}, {name: index, source: "index", mutable: true, optional: true}}
 	row := g.blocksNestedFragment(each.Children, locals)
+	// A row that does not read its index ignores index changes (task 102).
+	ignoresIndex := g.blocks.unread[index]
 	key := jsast.JsExpr(jsast.GenNull())
 	if each.HasKey() {
 		// Keyed rows compare String(key), so 1 and "1" are one row.
@@ -720,10 +762,19 @@ func (g *ASTGen) buildBlocksEach(each *sfcast.EachBlockNode) {
 	args := []jsast.JsExpr{blocksArrow(nil, g.templateExpr(each.IterExpr)), key, jsast.GenIdent(row), fallback, blocksChanged(g.blocksGuard(each.IterExpr))}
 	// A keyed each over a $state.deep collection refreshes only the rows that
 	// in-place mutations touched (task 023).
+	var dirtyRows jsast.JsExpr
 	if each.HasKey() {
 		if plan := g.eachIncrementalPlanFor(each); plan != nil {
-			args = append(args, blocksArrow(nil, jsast.GenCall(jsast.GenIdent("$$eachRowsForMutations"), jsast.GenIdent("$$activeMutations_"+plan.stateName), jsast.GenStrLit(plan.keyField))))
+			dirtyRows = blocksArrow(nil, jsast.GenCall(jsast.GenIdent("$$eachRowsForMutations"), jsast.GenIdent("$$activeMutations_"+plan.stateName), jsast.GenStrLit(plan.keyField)))
 		}
+	}
+	switch {
+	case ignoresIndex && dirtyRows == nil:
+		args = append(args, jsast.GenNull(), jsast.GenBoolLit(true))
+	case ignoresIndex:
+		args = append(args, dirtyRows, jsast.GenBoolLit(true))
+	case dirtyRows != nil:
+		args = append(args, dirtyRows)
 	}
 	g.blocksSite(each.IterExpr)
 	g.blocksBlockCall("$$each", args...)

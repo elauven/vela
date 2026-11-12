@@ -953,3 +953,198 @@ func TestBrowserRuntimeDeepStateCrossesComponentDirectories(t *testing.T) {
 		{"assertText": "p.child", "equals": "2"},
 	})
 }
+
+// Task 102: a keyed reconciliation leaves rows whose item, read index and
+// deep content did not change alone.
+
+// rowWrites counts attribute and text writes under ul.list (a
+// MutationObserver reports a write even when the value is the same).
+const rowWrites = `
+  import { onMount } from 'vela';
+  onMount(() => {
+    globalThis.__writes = 0;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) if (record.type !== 'childList') globalThis.__writes++;
+    });
+    observer.observe(document.querySelector('ul.list'), { attributes: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  });
+`
+
+func TestBrowserRuntimeKeyedEachSkipsUnchangedRows(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>` + rowWrites + `
+  const all = Array.from({ length: 20 }, (_, i) => ({ id: i, title: (i % 2 ? 'odd ' : 'even ') + i }));
+  let query = $state('');
+  let selected = $state(-1);
+  let visible = $derived(all.filter((item) => item.title.includes(query)));
+</script>
+<template><input class="q" bind:value={query} /><button class="sel" @click={() => selected = 3}>select</button>
+<ul class="list">{#each visible as item (item.id)}<li :title={item.title} class:sel={item.id === selected}>{item.title}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"assertCount": "li", "equals": 20},
+		{"input": "input.q", "value": "odd"},
+		{"assertCount": "li", "equals": 10},
+		{"assertGlobal": "__writes", "equals": 0},
+		{"input": "input.q", "value": ""},
+		{"assertCount": "li", "equals": 20},
+		{"assertText": "li:nth-of-type(2)", "equals": "odd 1"},
+		{"assertGlobal": "__writes", "equals": 0},
+		// Bindings that read outer state still update.
+		{"click": "button.sel"},
+		{"assertCount": "li.sel", "equals": 1},
+		{"assertText": "li.sel", "equals": "odd 3"},
+	})
+}
+
+func TestBrowserRuntimeUnkeyedEachSkipsUnchangedRows(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>` + rowWrites + `
+  let items = $state([{ t: 'a' }, { t: 'b' }, { t: 'c' }]);
+  function add() { items = [...items, { t: 'd' }]; }
+  function replace() { items = [items[0], { t: 'x' }, items[2], items[3]]; }
+</script>
+<template><button class="add" @click={add}>add</button><button class="rep" @click={replace}>rep</button>
+<ul class="list">{#each items as item}<li :title={item.t}>{item.t}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"click": "button.add"},
+		{"assertCount": "li", "equals": 4},
+		{"assertGlobal": "__writes", "equals": 0},
+		{"click": "button.rep"},
+		{"assertText": "li:nth-of-type(2)", "equals": "x"},
+		// The replaced row writes its title attribute and its text.
+		{"assertGlobal": "__writes", "equals": 2},
+	})
+}
+
+func TestBrowserRuntimeKeyedEachDeepWriteInSameFlush(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state.deep([{ id: 1, t: 'a', meta: { n: 0 } }, { id: 2, t: 'b', meta: { n: 0 } }, { id: 3, t: 'c', meta: { n: 0 } }]);
+  let query = $state('');
+  let visible = $derived(items.filter((item) => item.t.includes(query)));
+  function pushAndWrite() { items.push({ id: 4, t: 'd', meta: { n: 0 } }); items[1].t = 'b1'; }
+  function reverseAndWrite() { items.reverse(); items[0].t = 'z'; }
+  function filterAndWrite() { query = '1'; items.find((item) => item.id === 2).meta.n = 5; }
+  function writeVisible() { visible[0].meta.n = 7; }
+</script>
+<template><button class="push" @click={pushAndWrite}>push</button><button class="rev" @click={reverseAndWrite}>rev</button>
+<button class="filter" @click={filterAndWrite}>filter</button><button class="vis" @click={writeVisible}>vis</button>
+<ul class="list">{#each visible as item (item.id)}<li>{item.t}:{item.meta.n}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"click": "button.push"},
+		{"assertCount": "li", "equals": 4},
+		{"assertText": "li:nth-of-type(2)", "equals": "b1:0"},
+		{"click": "button.rev"},
+		{"assertText": "li:nth-of-type(1)", "equals": "z:0"},
+		{"assertText": "li:nth-of-type(3)", "equals": "b1:0"},
+		{"click": "button.filter"},
+		{"assertCount": "li", "equals": 1},
+		{"assertText": "li", "equals": "b1:5"},
+		{"click": "button.vis"},
+		{"assertText": "li", "equals": "b1:7"},
+	})
+}
+
+func TestBrowserRuntimeKeyedEachDeepWriteThroughProp(t *testing.T) {
+	runBrowserSources(t, map[string]string{
+		"App.vela": `<script>
+  import { List } from './List.vela';
+  const author = { name: 'ann' };
+  let items = $state.deep([{ id: 1, t: 'a', author }, { id: 2, t: 'b', author }, { id: 3, t: 'c', author: { name: 'bob' } }]);
+  function write() { items[1].t = 'b1'; }
+  function rename() { items[0].author.name = 'amy'; }
+</script>
+<template><button class="w" @click={write}>w</button><button class="r" @click={rename}>r</button><List :items={items} /></template>`,
+		"List.vela": `<script>
+  export let items = [];
+</script>
+<template><ul class="list">{#each items as item (item.id)}<li>{item.t}/{item.author.name}</li>{/each}</ul></template>`,
+	}, "App.js", []rtStep{
+		{"click": "button.w"},
+		{"assertText": "li:nth-of-type(2)", "equals": "b1/ann"},
+		// A nested object shared by two items updates both rows.
+		{"click": "button.r"},
+		{"assertText": "li:nth-of-type(1)", "equals": "a/amy"},
+		{"assertText": "li:nth-of-type(2)", "equals": "b1/amy"},
+		{"assertText": "li:nth-of-type(3)", "equals": "c/bob"},
+	})
+}
+
+func TestBrowserRuntimeKeyedEachIndexRowsUpdateOnMove(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+  let picked = $state('');
+  function reverse() { items = [...items].reverse(); }
+</script>
+<template><button class="rev" @click={reverse}>rev</button><p class="picked">{picked}</p>
+<ul class="list">{#each items as item, i (item.id)}<li><span class="text">{i}:{item.id}</span><button class="pick" @click={() => picked = i + item.id}>pick</button></li>{/each}</ul>
+<ol>{#each items as item, i (item.id)}<li class="h"><button class="only" @click={() => picked = 'h' + i}>{item.id}</button></li>{/each}</ol></template>`}, "App.js", []rtStep{
+		{"click": "button.rev"},
+		{"assertText": "ul li:nth-of-type(1) .text", "equals": "0:c"},
+		{"assertText": "ul li:nth-of-type(3) .text", "equals": "2:a"},
+		{"click": "ul li:nth-of-type(1) button.pick"},
+		{"assertText": "p.picked", "equals": "0c"},
+		// The index read only by a handler is still current.
+		{"click": "li.h:nth-of-type(3) button.only"},
+		{"assertText": "p.picked", "equals": "h2"},
+	})
+}
+
+// TestBrowserRuntimeKeyedEachMovesFewestRows: swapping two rows moves two
+// rows, not every row between them (task 102, moves).
+func TestBrowserRuntimeKeyedEachMovesFewestRows(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  import { onMount } from 'vela';
+  let rows = $state.deep(Array.from({ length: 20 }, (_, i) => ({ id: i })));
+  onMount(() => {
+    globalThis.__moved = 0;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) globalThis.__moved += record.addedNodes.length;
+    });
+    observer.observe(document.querySelector('ul'), { childList: true });
+    return () => observer.disconnect();
+  });
+  function swap() { const row = rows[1]; rows[1] = rows[18]; rows[18] = row; }
+  function rotate() { rows.push(rows.shift()); }
+  function shuffle() { rows = [rows[3], rows[0], rows[1], rows[2], ...rows.slice(4)]; }
+</script>
+<template><button class="swap" @click={swap}>swap</button><button class="rot" @click={rotate}>rot</button><button class="shuf" @click={shuffle}>shuf</button>
+<ul>{#each rows as row (row.id)}<li>{row.id}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"click": "button.swap"},
+		{"assertText": "li:nth-of-type(2)", "equals": "18"},
+		{"assertText": "li:nth-of-type(19)", "equals": "1"},
+		{"assertGlobal": "__moved", "equals": 2},
+		{"click": "button.rot"},
+		{"assertText": "li:nth-of-type(1)", "equals": "18"},
+		{"assertText": "li:nth-of-type(20)", "equals": "0"},
+		{"assertGlobal": "__moved", "equals": 3},
+		{"click": "button.shuf"},
+		{"assertText": "li:nth-of-type(1)", "equals": "4"},
+		{"assertText": "li:nth-of-type(2)", "equals": "18"},
+		{"assertText": "li:nth-of-type(4)", "equals": "3"},
+		{"assertText": "li:nth-of-type(5)", "equals": "5"},
+		{"assertGlobal": "__moved", "equals": 4},
+	})
+}
+
+// TestBrowserRuntimeKeyedEachClearsList: emptying a list that is all its
+// parent holds clears the parent at once; the list keeps working after it,
+// and a list beside other content removes only its rows.
+func TestBrowserRuntimeKeyedEachClearsList(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let rows = $state([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  function clear() { rows = []; }
+  function fill() { rows = [{ id: 4 }, { id: 5 }]; }
+</script>
+<template><button class="clear" @click={clear}>clear</button><button class="fill" @click={fill}>fill</button>
+<ul class="only">{#each rows as row (row.id)}<li>{row.id}</li>{/each}</ul>
+<ol><li class="head">head</li>{#each rows as row (row.id)}<li class="r">{row.id}</li>{:else}<li class="none">none</li>{/each}<li class="tail">tail</li></ol></template>`}, "App.js", []rtStep{
+		{"click": "button.clear"},
+		{"assertCount": "ul.only li", "equals": 0},
+		{"assertCount": "ol li.r", "equals": 0},
+		{"assertCount": "ol li.head", "equals": 1},
+		{"assertCount": "ol li.tail", "equals": 1},
+		{"assertCount": "ol li.none", "equals": 1},
+		{"click": "button.fill"},
+		{"assertText": "ul.only li:nth-of-type(2)", "equals": "5"},
+		{"assertText": "ol li:nth-of-type(2)", "equals": "4"},
+		{"assertCount": "ol li.none", "equals": 0},
+		{"click": "button.clear"},
+		{"assertCount": "ul.only li", "equals": 0},
+	})
+}

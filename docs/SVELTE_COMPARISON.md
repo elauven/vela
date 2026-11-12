@@ -34,6 +34,13 @@ Vela keeps `$state` shallow so that the common case compiles to direct
 assignments without a proxy; opt into the proxy where nested writes are
 needed.
 
+Svelte gives every property of a `$state` proxy its own signal; Vela tracks
+whole values. A row of `{#each}` therefore updates when its item is another
+object, when its index changed and the row reads it, or when a write
+through a `$state.deep` proxy changed the item or anything inside it in the
+same flush — the same rows Svelte 5 updates, found by identity and a set of
+written objects instead of per-property signals.
+
 ## Templates
 
 | | Svelte 5 | Vela |
