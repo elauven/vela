@@ -1121,3 +1121,30 @@ func TestBrowserRuntimeKeyedEachMovesFewestRows(t *testing.T) {
 		{"assertGlobal": "__moved", "equals": 4},
 	})
 }
+
+// TestBrowserRuntimeKeyedEachClearsList: emptying a list that is all its
+// parent holds clears the parent at once; the list keeps working after it,
+// and a list beside other content removes only its rows.
+func TestBrowserRuntimeKeyedEachClearsList(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let rows = $state([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  function clear() { rows = []; }
+  function fill() { rows = [{ id: 4 }, { id: 5 }]; }
+</script>
+<template><button class="clear" @click={clear}>clear</button><button class="fill" @click={fill}>fill</button>
+<ul class="only">{#each rows as row (row.id)}<li>{row.id}</li>{/each}</ul>
+<ol><li class="head">head</li>{#each rows as row (row.id)}<li class="r">{row.id}</li>{:else}<li class="none">none</li>{/each}<li class="tail">tail</li></ol></template>`}, "App.js", []rtStep{
+		{"click": "button.clear"},
+		{"assertCount": "ul.only li", "equals": 0},
+		{"assertCount": "ol li.r", "equals": 0},
+		{"assertCount": "ol li.head", "equals": 1},
+		{"assertCount": "ol li.tail", "equals": 1},
+		{"assertCount": "ol li.none", "equals": 1},
+		{"click": "button.fill"},
+		{"assertText": "ul.only li:nth-of-type(2)", "equals": "5"},
+		{"assertText": "ol li:nth-of-type(2)", "equals": "4"},
+		{"assertCount": "ol li.none", "equals": 0},
+		{"click": "button.clear"},
+		{"assertCount": "ul.only li", "equals": 0},
+	})
+}

@@ -783,6 +783,14 @@ export function $$key(cursor, value, body, changed) {
 // longestOrderedRun marks (1) the rows of next that form the longest
 // subsequence of increasing old positions (pos; -1 for a new row): moving
 // only the other rows puts the list in order with the fewest moves.
+// leavesWithOutro reports whether a row has an out transition to play.
+function leavesWithOutro(mounted) {
+  const transitions = mounted.owner.transitions;
+  if (!transitions) return false;
+  for (const entry of transitions) if (entry.kind !== 'in') return true;
+  return false;
+}
+
 function longestOrderedRun(next) {
   const n = next.length;
   const stays = new Uint8Array(n);
@@ -845,7 +853,17 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
   const reconcile = (dirty, initial) => {
     const items = Array.from(collection() || []);
     if (items.length === 0) {
-      for (const mounted of rows) leave(mounted, block);
+      const parent = anchor.parentNode;
+      if (rows.length > 0 && parent && parent.lastChild === anchor &&
+          parent.firstChild === rows[0].range.start && !(block.leaving && block.leaving.size) &&
+          !rows.some(leavesWithOutro)) {
+        // The rows are all the parent holds: clear it at once (task 102).
+        for (const mounted of rows) mounted.owner.release();
+        parent.textContent = '';
+        parent.appendChild(anchor);
+      } else {
+        for (const mounted of rows) leave(mounted, block);
+      }
       rows = [];
       if (byKey) byKey.clear();
       if (fallback && !empty) {
