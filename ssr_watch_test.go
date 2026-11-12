@@ -86,7 +86,6 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 	opts := CompileOptions{StatusWriter: &log, ErrWriter: &log, SSRModule: SSRDefaultModule}
 	done := make(chan struct{})
 	stopped := make(chan struct{})
-	start := time.Now()
 	go func() {
 		watchSSRProject(src, out, opts, false, 20*time.Millisecond, done)
 		close(stopped)
@@ -100,7 +99,10 @@ func TestSSRWatchRebuildsLikeACleanBuild(t *testing.T) {
 	}
 	defer stop()
 	stamp := filepath.Join(out, SSRReadyStamp)
-	waitForBuild(t, stamp, start, &log)
+	// The output directory is new, so any stamp is the initial build. A start
+	// time would not do: on Windows the wall clock can read the same in the
+	// test and in the watcher's first build, which is then not after it.
+	waitForBuild(t, stamp, time.Time{}, &log)
 	if _, err := os.Stat(filepath.Join(out, "server", "components", "gone.go")); err != nil {
 		t.Fatalf("initial build: %v\n%s", err, log.String())
 	}
