@@ -48,6 +48,55 @@ if (!globalThis[_B]) {
   globalThis[_B] = { depth: 0, queue: [], scheduled: false };
 }
 
+// Touched objects (task 102). Every write through a deep-state proxy adds
+// the raw object it wrote and the raw objects that contain it (parents are
+// learnt when a proxy reads an object property) to one set shared by all
+// deep states. A keyed {#each} skips a row whose item is the same object
+// and not touched. The set empties when the outermost flush ends.
+const _T = globalThis[_B];
+if (!_T.touched) {
+  _T.touched = new Set();
+  _T.parents = new WeakMap();
+  _T.flushing = 0;
+}
+const _touched = _T.touched;
+const _parents = _T.parents;
+
+// _Parents holds the parents of an object that was read from several.
+class _Parents extends Set {}
+
+function _linkParent(child, parent) {
+  const current = _parents.get(child);
+  if (current === parent) return;
+  if (current === undefined) {
+    _parents.set(child, parent);
+  } else if (current instanceof _Parents) {
+    current.add(parent);
+  } else {
+    _parents.set(child, new _Parents([current, parent]));
+  }
+}
+
+function _touch(raw) {
+  while (raw !== undefined && !_touched.has(raw)) {
+    _touched.add(raw);
+    const parent = _parents.get(raw);
+    if (parent instanceof _Parents) {
+      for (const each of parent) _touch(each);
+      return;
+    }
+    raw = parent;
+  }
+}
+
+// $$touched reports whether value, a deep-state proxy or a raw object, or
+// anything inside it was written through a deep-state proxy in the current
+// flush.
+export function $$touched(value) {
+  if (value === null || typeof value !== 'object' || _touched.size === 0) return false;
+  return _touched.has(value[$$PROXY_RAW] || value);
+}
+
 // _flushQueue drains b.queue, running each deferred fn in FIFO order.
 // Reentrant pushes (a deferred fn that queues another fn) are handled by
 // looping until the queue is empty, so the entire transitive closure of
@@ -56,15 +105,22 @@ function _flushQueue() {
   const b = globalThis[_B];
   b.scheduled = false;
   let firstError;
-  while (b.queue.length) {
-    const q = b.queue.splice(0);
-    for (const f of q) {
-      try {
-        f();
-      } catch (error) {
-        if (firstError === undefined) firstError = error;
+  // A store notification inside a flush flushes again (_batchRun): the
+  // touched set lives until the outermost flush ends.
+  b.flushing++;
+  try {
+    while (b.queue.length) {
+      const q = b.queue.splice(0);
+      for (const f of q) {
+        try {
+          f();
+        } catch (error) {
+          if (firstError === undefined) firstError = error;
+        }
       }
     }
+  } finally {
+    if (--b.flushing === 0) _touched.clear();
   }
   if (firstError !== undefined) throw firstError;
 }
@@ -685,11 +741,14 @@ export function $$proxy(val, notify) {
         // contents are not).
         if (k === $$PROXY_BRAND) return true;
         if (k === $$PROXY_SHARE) return subscribe;
+        if (k === $$PROXY_RAW) return t[$$PROXY_RAW] || t;
         const value = Reflect.get(t, k, receiver);
         if (Array.isArray(t) && typeof k === 'string' &&
             mutatingArrayMethods.has(k) && typeof value === 'function') {
           return runArrayMutation(t, k, receiver, value, path);
         }
+        if (value === null || typeof value !== 'object') return value;
+        _linkParent(value[$$PROXY_RAW] || value, t[$$PROXY_RAW] || t);
         return wrap(value, path.concat(k));
       },
       set(t, k, x, receiver) {
@@ -698,13 +757,19 @@ export function $$proxy(val, notify) {
         const ok = Reflect.set(t, k, unwrap(x), receiver);
         const hasOwn = Object.prototype.hasOwnProperty.call(t, k);
         if (ok && (hadOwn !== hasOwn ||
-            !Object.is(before, Reflect.get(t, k, receiver)))) changed({ kind: 'set', path: path.concat(k) });
+            !Object.is(before, Reflect.get(t, k, receiver)))) {
+          _touch(t[$$PROXY_RAW] || t);
+          changed({ kind: 'set', path: path.concat(k) });
+        }
         return ok;
       },
       deleteProperty(t, k) {
         if (!Object.prototype.hasOwnProperty.call(t, k)) return true;
         const ok = Reflect.deleteProperty(t, k);
-        if (ok) changed({ kind: 'delete', path: path.concat(k) });
+        if (ok) {
+          _touch(t[$$PROXY_RAW] || t);
+          changed({ kind: 'delete', path: path.concat(k) });
+        }
         return ok;
       },
     });
@@ -720,6 +785,8 @@ export function $$proxy(val, notify) {
 const $$PROXY_BRAND = Symbol.for('vela.proxy');
 // $$PROXY_SHARE reads the subscribe function of a deep-state proxy.
 const $$PROXY_SHARE = Symbol.for('vela.proxy.share');
+// $$PROXY_RAW reads the raw object of a deep-state proxy (task 102).
+const $$PROXY_RAW = Symbol.for('vela.proxy.raw');
 
 // $$isProxy reports whether v is a deep-reactive proxy produced by
 // $$proxy.  A component prop setter uses this to decide whether an
