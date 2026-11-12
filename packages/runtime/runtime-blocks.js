@@ -780,6 +780,31 @@ export function $$key(cursor, value, body, changed) {
   });
 }
 
+// longestOrderedRun marks (1) the rows of next that form the longest
+// subsequence of increasing old positions (pos; -1 for a new row): moving
+// only the other rows puts the list in order with the fewest moves.
+function longestOrderedRun(next) {
+  const n = next.length;
+  const stays = new Uint8Array(n);
+  const previous = new Int32Array(n);
+  const tails = [];
+  for (let i = 0; i < n; i++) {
+    const pos = next[i].pos;
+    if (pos < 0) continue;
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (next[tails[middle]].pos < pos) low = middle + 1;
+      else high = middle;
+    }
+    previous[i] = low > 0 ? tails[low - 1] : -1;
+    tails[low] = i;
+  }
+  for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = previous[i]) stays[i] = 1;
+  return stays;
+}
+
 // ── $$each ───────────────────────────────────────────────────────────────
 // collection() returns the iterable; key(item, index) returns the row key or
 // is null for an unkeyed list. A row fragment receives the scope
@@ -852,16 +877,23 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     let restoreFocus = null;
     // animate: rows are measured before they move (task 096).
     const rects = initial ? null : measureRows(rows);
+    for (let i = 0; i < rows.length; i++) rows[i].pos = i;
     const next = [];
     const nextKeys = new Map();
+    // inOrder: the kept rows keep their old order, so none moves.
+    let inOrder = true;
+    let lastPos = -1;
     for (let i = 0; i < items.length; i++) {
       const rowKey = key(items[i], i);
       nextKeys.set(rowKey, i);
       let mounted = byKey.get(rowKey);
       if (mounted) {
         updateMounted(mounted, dirty, setScope(mounted, items[i], i));
+        if (mounted.pos < lastPos) inOrder = false;
+        lastPos = mounted.pos;
       } else {
         mounted = mountRow(items[i], i, anchor, initial);
+        mounted.pos = -1;
         byKey.set(rowKey, mounted);
       }
       mounted.key = rowKey;
@@ -873,11 +905,14 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
         byKey.delete(rowKey);
       }
     }
-    // Place rows in order, moving only those not already in position.
+    // Place rows in order. The rows of the longest run that kept its old
+    // order stay; the others move if they are not already in position.
+    const stays = inOrder ? null : longestOrderedRun(next);
     let before = anchor;
     for (let i = next.length - 1; i >= 0; i--) {
       const mounted = next[i];
-      if (mounted.range.end.nextSibling !== before) {
+      if (stays ? stays[i] === 0 && mounted.range.end.nextSibling !== before
+        : mounted.pos < 0 && mounted.range.end.nextSibling !== before) {
         if (restoreFocus === null) restoreFocus = focusedRow(rows, anchor.parentNode, focused);
         moveRange(mounted.range, before);
       }

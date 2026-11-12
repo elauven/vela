@@ -1085,3 +1085,39 @@ func TestBrowserRuntimeKeyedEachIndexRowsUpdateOnMove(t *testing.T) {
 	})
 }
 
+// TestBrowserRuntimeKeyedEachMovesFewestRows: swapping two rows moves two
+// rows, not every row between them (task 102, moves).
+func TestBrowserRuntimeKeyedEachMovesFewestRows(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  import { onMount } from 'vela';
+  let rows = $state.deep(Array.from({ length: 20 }, (_, i) => ({ id: i })));
+  onMount(() => {
+    globalThis.__moved = 0;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) globalThis.__moved += record.addedNodes.length;
+    });
+    observer.observe(document.querySelector('ul'), { childList: true });
+    return () => observer.disconnect();
+  });
+  function swap() { const row = rows[1]; rows[1] = rows[18]; rows[18] = row; }
+  function rotate() { rows.push(rows.shift()); }
+  function shuffle() { rows = [rows[3], rows[0], rows[1], rows[2], ...rows.slice(4)]; }
+</script>
+<template><button class="swap" @click={swap}>swap</button><button class="rot" @click={rotate}>rot</button><button class="shuf" @click={shuffle}>shuf</button>
+<ul>{#each rows as row (row.id)}<li>{row.id}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"click": "button.swap"},
+		{"assertText": "li:nth-of-type(2)", "equals": "18"},
+		{"assertText": "li:nth-of-type(19)", "equals": "1"},
+		{"assertGlobal": "__moved", "equals": 2},
+		{"click": "button.rot"},
+		{"assertText": "li:nth-of-type(1)", "equals": "18"},
+		{"assertText": "li:nth-of-type(20)", "equals": "0"},
+		{"assertGlobal": "__moved", "equals": 3},
+		{"click": "button.shuf"},
+		{"assertText": "li:nth-of-type(1)", "equals": "4"},
+		{"assertText": "li:nth-of-type(2)", "equals": "18"},
+		{"assertText": "li:nth-of-type(4)", "equals": "3"},
+		{"assertText": "li:nth-of-type(5)", "equals": "5"},
+		{"assertGlobal": "__moved", "equals": 4},
+	})
+}
