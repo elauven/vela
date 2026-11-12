@@ -160,20 +160,46 @@ function rangeNodes(range) {
   return nodes;
 }
 
+// removeRange, moveRange and rangeHas walk the range in place, without the
+// array of rangeNodes: they run for every row of a list (task 103).
 function removeRange(range) {
-  for (const node of rangeNodes(range)) node.remove();
+  if (!range) return;
+  for (let node = range.start; node;) {
+    const next = node === range.end ? null : node.nextSibling;
+    node.remove();
+    node = next;
+  }
 }
 
 function moveRange(range, before) {
+  if (!range) return;
   const parent = before.parentNode;
-  for (const node of rangeNodes(range)) parent.insertBefore(node, before);
+  for (let node = range.start; node;) {
+    const next = node === range.end ? null : node.nextSibling;
+    parent.insertBefore(node, before);
+    node = next;
+  }
 }
 
-function rangeContains(range, node) {
-  for (const item of rangeNodes(range)) {
-    if (item === node || item.contains(node)) return true;
+// rangeHas reports whether child, a sibling of the range's nodes, is one
+// of them.
+function rangeHas(range, child) {
+  if (!range) return false;
+  for (let node = range.start; node; node = node.nextSibling) {
+    if (node === child) return true;
+    if (node === range.end) break;
   }
   return false;
+}
+
+// focusedRow reports whether focused is inside one of rows, whose nodes
+// are children of parent. Focus outside the parent costs one contains().
+function focusedRow(rows, parent, focused) {
+  if (!focused || focused === document.body || !parent || focused === parent ||
+      !parent.contains(focused)) return false;
+  let child = focused;
+  while (child.parentNode !== parent) child = child.parentNode;
+  return rows.some((mounted) => rangeHas(mounted.range, child));
 }
 
 // ── Create cursor ────────────────────────────────────────────────────────
@@ -807,9 +833,9 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     }
     // Keyed: retain, move, create and remove rows by key; keep focus inside a
     // retained row that moves.
+    // The focus is looked up only before the first move (task 103).
     const focused = initial ? null : document.activeElement;
-    const restoreFocus = focused && focused !== document.body &&
-      rows.some((mounted) => rangeContains(mounted.range, focused));
+    let restoreFocus = null;
     // animate: rows are measured before they move (task 096).
     const rects = initial ? null : measureRows(rows);
     const next = [];
@@ -839,7 +865,10 @@ export function $$each(cursor, collection, key, row, fallback, changed, dirtyRow
     let before = anchor;
     for (let i = next.length - 1; i >= 0; i--) {
       const mounted = next[i];
-      if (mounted.range.end.nextSibling !== before) moveRange(mounted.range, before);
+      if (mounted.range.end.nextSibling !== before) {
+        if (restoreFocus === null) restoreFocus = focusedRow(rows, anchor.parentNode, focused);
+        moveRange(mounted.range, before);
+      }
       before = mounted.range.start;
     }
     rows = next;

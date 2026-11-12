@@ -165,6 +165,50 @@ func TestBrowserRuntimeKeyedEachRestoresFocusAfterReorder(t *testing.T) {
 	})
 }
 
+// TestBrowserRuntimeKeyedEachFocusOutsideList: a reorder with the focus on
+// an input outside the list keeps the focus there and looks the focus up
+// with one contains() call, not one per row (task 103).
+func TestBrowserRuntimeKeyedEachFocusOutsideList(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]);
+  const contains = Node.prototype.contains;
+  Node.prototype.contains = function (node) {
+    globalThis.__contains = (globalThis.__contains || 0) + 1;
+    return contains.call(this, node);
+  };
+  function reorder() {
+    globalThis.__contains = 0;
+    items = [...items].reverse();
+  }
+</script>
+<template><input class="filter" @keydown={reorder} /><ul>{#each items as item (item.id)}<li class="row">{item.id}</li>{/each}</ul></template>`}, "App.js", []rtStep{
+		{"focus": "input.filter"},
+		{"keydown": "input.filter", "key": "a"},
+		{"assertText": "li.row:nth-of-type(1)", "equals": "d"},
+		{"assertFocused": "input.filter"},
+		{"assertGlobal": "__contains", "equals": 1},
+	})
+}
+
+// TestBrowserRuntimeKeyedEachRestoresFocusInMultiNodeRow: the focused input
+// of a row with several top-level nodes keeps the focus when the row moves.
+func TestBrowserRuntimeKeyedEachRestoresFocusInMultiNodeRow(t *testing.T) {
+	runBrowserSources(t, map[string]string{"App.vela": `<script>
+  let items = $state([{ id: "a" }, { id: "b" }, { id: "c" }]);
+  function reorder() { items = [...items].reverse(); }
+</script>
+<template><div class="list" @keydown={reorder}>{#each items as item (item.id)}<span class="label">{item.id}</span><input :class={"in-" + item.id} />{/each}</div></template>`}, "App.js", []rtStep{
+		{"focus": "input.in-a"},
+		{"keydown": "input.in-a", "key": "ArrowRight"},
+		{"assertText": "span.label", "equals": "c"},
+		{"assertFocused": "input.in-a"},
+		{"focus": "input.in-b"},
+		{"keydown": "input.in-b", "key": "ArrowRight"},
+		{"assertText": "span.label", "equals": "a"},
+		{"assertFocused": "input.in-b"},
+	})
+}
+
 // The audit fixtures below are executable runtime-cost regression contracts.
 // Tasks 021 and 022 have already tightened the deep-state and synchronous
 // flush counts; the remaining fixtures describe the next optimisation targets.
